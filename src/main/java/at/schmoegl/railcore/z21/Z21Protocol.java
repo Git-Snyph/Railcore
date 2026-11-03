@@ -18,11 +18,21 @@ import java.util.List;
 public final class Z21Protocol {
     public static final int PORT = 21105;
 
-    static final int H_SERIAL = 0x10, H_LOGOFF = 0x30, H_X = 0x40, H_BROADCASTFLAGS = 0x50,
-            H_RMBUS_DATACHANGED = 0x80, H_RMBUS_GETDATA = 0x81, H_CAN_DETECTOR = 0xC4;
+    static final int H_SERIAL = 0x10, H_GET_CODE = 0x18, H_HWINFO = 0x1A, H_LOGOFF = 0x30, H_X = 0x40,
+            H_BROADCASTFLAGS = 0x50, H_GET_BROADCASTFLAGS = 0x51,
+            H_RMBUS_DATACHANGED = 0x80, H_RMBUS_GETDATA = 0x81,
+            H_SYSTEMSTATE_DATACHANGED = 0x84, H_SYSTEMSTATE_GETDATA = 0x85,
+            H_RAILCOM_DATACHANGED = 0x88, H_CAN_DETECTOR = 0xC4;
 
     /** Broadcast-Flags: Fahr- und Schaltinfos + R-Bus-Rückmelder. */
     public static final int BC_DRIVING_SWITCHING = 0x00000001, BC_RBUS = 0x00000002, BC_CAN_DETECTOR = 0x00080000;
+    /**
+     * Weitere Broadcast-Flags laut Z21-LAN-Spezifikation: RailCom der abonnierten Loks, Systemzustand,
+     * Lokinfos aller Loks (ab Firmware 1.20, hohe Netzlast), RailCom aller Loks (ab Firmware 1.29).
+     * Ob die Zentrale ein Flag tatsächlich übernimmt, wird über LAN_GET_BROADCASTFLAGS erkannt, nie vorausgesetzt.
+     */
+    public static final int BC_RAILCOM = 0x00000004, BC_SYSTEM_STATE = 0x00000100,
+            BC_ALL_LOCOS = 0x00010000, BC_RAILCOM_ALL = 0x00040000;
 
     /** NId für "alle CAN-Belegtmelder". */
     public static final int CAN_ALL = 0xD000;
@@ -32,6 +42,21 @@ public final class Z21Protocol {
     // ---------------------------------------------------------------- Befehle
 
     public static byte[] getSerialNumber() { return packet(H_SERIAL); }
+
+    /** LAN_GET_CODE: Freischaltcode (z21 start gesperrt/freigeschaltet). */
+    public static byte[] getCode() { return packet(H_GET_CODE); }
+
+    /** LAN_GET_HWINFO: Hardware-Typ und Firmware-Version. */
+    public static byte[] getHwInfo() { return packet(H_HWINFO); }
+
+    /** LAN_GET_BROADCASTFLAGS: tatsächlich gesetzte Broadcast-Flags dieses Clients. */
+    public static byte[] getBroadcastFlags() { return packet(H_GET_BROADCASTFLAGS); }
+
+    /** LAN_SYSTEMSTATE_GETDATA: Ströme, Spannungen, Temperatur, Zentralenzustand, Fähigkeiten. */
+    public static byte[] systemStateGetData() { return packet(H_SYSTEMSTATE_GETDATA); }
+
+    /** LAN_X_GET_FIRMWARE_VERSION. */
+    public static byte[] getFirmwareVersion() { return x(0xF1, 0x0A); }
 
     public static byte[] logoff() { return packet(H_LOGOFF); }
 
@@ -165,6 +190,24 @@ public final class Z21Protocol {
             case H_SERIAL:
                 if (d.length >= 4) return new Z21Message.SerialNumber(u32(d, 0));
                 break;
+            case H_GET_CODE:
+                if (d.length >= 1) return new Z21Message.Code(d[0] & 0xFF);
+                break;
+            case H_HWINFO:
+                if (d.length >= 8) return new Z21Message.HwInfo(u32(d, 0), u32(d, 4));
+                break;
+            case H_GET_BROADCASTFLAGS:
+                if (d.length >= 4) return new Z21Message.BroadcastFlags(u32(d, 0));
+                break;
+            case H_SYSTEMSTATE_DATACHANGED:
+                if (d.length >= 16) return new Z21Message.SystemState(s16(d, 0), s16(d, 2), s16(d, 4), s16(d, 6),
+                        u16(d, 8), u16(d, 10), d[12] & 0xFF, d[13] & 0xFF, d[15] & 0xFF);
+                break;
+            case H_RAILCOM_DATACHANGED:
+                // LocoAddress(2) ReceiveCounter(4) ErrorCounter(2) Reserved(1) Options(1) Speed(1) QoS(1) Reserved(1)
+                if (d.length >= 13) return new Z21Message.RailComData(u16(d, 0), u32(d, 2), u16(d, 6),
+                        d[9] & 0xFF, d[10] & 0xFF, d[11] & 0xFF);
+                break;
             case H_RMBUS_DATACHANGED:
                 if (d.length >= 11) return new Z21Message.RBusFeedback(d[0] & 0xFF, Arrays.copyOfRange(d, 1, 11));
                 break;
@@ -191,6 +234,7 @@ public final class Z21Protocol {
                 case 0x08 -> new Z21Message.PowerState(TrackPower.SHORT_CIRCUIT);
                 case 0x12 -> new Z21Message.CvFailed("Kurzschluss auf dem Programmiergleis");
                 case 0x13 -> new Z21Message.CvFailed("Keine Antwort vom Decoder");
+                case 0x82 -> new Z21Message.UnknownCommand();
                 default -> new Z21Message.Unknown(H_X, d);
             };
         }
@@ -208,6 +252,7 @@ public final class Z21Protocol {
             return new Z21Message.CvResult(cv, d[4] & 0xFF);
         }
         if (xh == 0x63 && db0 == 0x21 && d.length >= 4) return new Z21Message.FirmwareVersion(d[2] & 0xFF, d[3] & 0xFF);
+        if (xh == 0xF3 && db0 == 0x0A && d.length >= 5) return new Z21Message.XFirmware(((d[2] & 0xFF) << 8) | (d[3] & 0xFF));
         if (xh == 0x43 && d.length >= 5) {
             int addr = (((d[1] & 0xFF) << 8) | (d[2] & 0xFF)) + 1;
             TurnoutPosition p = switch (d[3] & 0x03) {
@@ -241,7 +286,9 @@ public final class Z21Protocol {
         int shift = 5;
         for (int i = 6; i < d.length - 1 && shift <= 29; i++, shift += 8) f |= (long) (d[i] & 0xFF) << shift;
         f &= 0xFFFFFFFFL;
-        return new Z21Message.Loco(new LocoState(address, speed, steps, dir, f), busy);
+        // DB8 (F29–F31) gibt es nur bei neuerer Firmware: EF, 2 Adressbytes, DB2..DB8, XOR = 11 Byte.
+        boolean f29to31 = d.length >= 11;
+        return new Z21Message.Loco(new LocoState(address, speed, steps, dir, f), busy, f29to31);
     }
 
     /**
@@ -256,7 +303,7 @@ public final class Z21Protocol {
             boolean occupied = (v1 & 0x1000) != 0;
             boolean voltage = (v1 & 0x0100) != 0;
             int overload = (v1 & 0x1200) == 0x1200 ? v1 & 0x0F : 0;
-            return new Z21Message.CanOccupancy(nid, addr, port, occupied, voltage, overload);
+            return new Z21Message.CanOccupancy(nid, addr, port, occupied, voltage, overload, v1);
         }
         if (type >= 0x11 && type <= 0x1F) {
             return new Z21Message.CanRailCom(nid, addr, port, type - 0x11, v1 & 0x3FFF, v1 >> 14, v2 & 0x3FFF, v2 >> 14);
@@ -320,6 +367,13 @@ public final class Z21Protocol {
     }
 
     static int u16(byte[] b, int o) { return (b[o] & 0xFF) | (b[o + 1] & 0xFF) << 8; }
+
+    static int s16(byte[] b, int o) { return (short) u16(b, o); }
+
+    /** BCD-kodierte Firmware-Version, z. B. 0x0142 → "1.42". */
+    public static String formatBcdVersion(long bcd) {
+        return String.format("%x.%02x", (bcd >> 8) & 0xFF, bcd & 0xFF);
+    }
 
     static long u32(byte[] b, int o) {
         return (b[o] & 0xFFL) | (b[o + 1] & 0xFFL) << 8 | (b[o + 2] & 0xFFL) << 16 | (b[o + 3] & 0xFFL) << 24;

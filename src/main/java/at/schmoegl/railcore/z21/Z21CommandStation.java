@@ -191,6 +191,13 @@ public class Z21CommandStation extends AbstractCommandStation {
             case Z21Message.CvFailed cf -> fire(l -> l.onCvFailed(cf.reason()));
             case Z21Message.SerialNumber s -> { }
             case Z21Message.FirmwareVersion v -> { }
+            case Z21Message.XFirmware v -> { }
+            case Z21Message.HwInfo h -> { }
+            case Z21Message.Code c -> { }
+            case Z21Message.BroadcastFlags b -> { }
+            case Z21Message.SystemState st -> { }
+            case Z21Message.RailComData rd -> { }
+            case Z21Message.UnknownCommand uc -> { }
             case Z21Message.Unknown u -> { }
         }
     }
