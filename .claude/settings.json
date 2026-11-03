@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "deny": [
+      "Read(./build/**)",
+      "Read(./.gradle/**)",
+      "Read(./gradle/wrapper/gradle-wrapper.jar)",
+      "Read(./docs/bilder/**)",
+      "Read(./src/main/resources/icons/**)",
+      "Read(./logs/**)",
+      "Read(./**/*.log)",
+      "Read(./**/*.db)",
+      "Read(./**/*.sqlite)",
+      "Read(./**/*.bundle)",
+      "Read(./**/*.jar)",
+      "Read(./**/*.xlsx)",
+      "Read(./**/*.png)",
+      "Read(./**/*.ico)"
+    ]
+  }
+}

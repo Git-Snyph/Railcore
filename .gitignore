@@ -3,3 +3,7 @@ build/
 .idea/
 *.iml
 out/
+logs/
+*.log
+*.db
+*.sqlite

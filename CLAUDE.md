@@ -53,6 +53,13 @@ Wenn eine Aufgabe einem dieser Grundsätze widerspricht: nicht umsetzen, sondern
 
 Logo: `docs/bilder/railcore-logo.png`. Programmsymbol: `docs/bilder/railcore-icon.png` (1024 px), `docs/bilder/railcore.ico` (Windows/Installer), Fenstersymbole `src/main/resources/icons/railcore-<Größe>.png` (16–256 px). Hausfarben: Nachtblau `#08121C` (Hintergrund), Signalrot `#EB1C24` (Akzent), Weiß (Schrift). Rot in der Oberfläche sparsam – es ist auch die Farbe für Nothalt und Störungen.
 
+## Sparsam arbeiten
+
+- Eine abgegrenzte Aufgabe pro Sitzung; nur die Dateien lesen, die die Aufgabe betrifft.
+- Bilder, Build-Ausgaben, Protokolle, Datenbanken und Archive nicht lesen (gesperrt in `.claude/settings.json`).
+- Builds und Tests leise ausführen (`gradlew build -q`), vollständige Ausgaben nur bei Fehlern.
+- Lastenheft nicht komplett lesen; bei Bedarf den betroffenen Abschnitt erfragen oder `docs/` nutzen.
+
 ## Commits
 
 - Kleine, in sich geschlossene Commits mit deutscher Nachricht (erste Zeile = was und warum).
