@@ -1,2 +1,2 @@
-at.schmoegl.bahnsteuerung.z21.Z21Factory
-at.schmoegl.bahnsteuerung.sim.SimulatorFactory
+at.schmoegl.railcore.z21.Z21Factory
+at.schmoegl.railcore.sim.SimulatorFactory

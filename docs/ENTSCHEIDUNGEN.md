@@ -1,9 +1,10 @@
-# Entscheidungsprotokoll – Bahnsteuerung
+# Entscheidungsprotokoll – RailCore
 
 Jede Entscheidung: Datum · was · warum · Folgen. Neue Einträge oben anfügen; überholte Entscheidungen nicht löschen, sondern als „ersetzt durch Nr. X" markieren.
 
 | Nr. | Datum | Entscheidung | Begründung | Folgen |
 | --- | --- | --- | --- | --- |
+| 16 | 2026-11-03 | Projektname RailCore mit Produktbereichen (Control, Studio, Fleet, Decoder, Timetable, Diagnostics, Simulator, Connect, Mobile) | Klare Gliederung für Oberfläche, Code und spätere Apps | Ein gemeinsamer Kern und eine Datenbank; Java-Paket at.schmoegl.railcore |
 | 15 | 2026-11-03 | Entwicklung in Claude Code mit privatem GitHub-Repository | Code liegt dauerhaft im Repository, wird gebaut und automatisch getestet | Simulator-Tests laufen bei jeder Änderung |
 | 14 | 2026-11-03 | Zugschluss längenbasiert; Widerstandsachsen optional | Alle Fahrzeug-, Block-, Weichen- und Fahrstraßenlängen werden gepflegt; Umbau aller Wagen nicht nötig | Freigabe erst nach berechnetem Zugschluss + Sicherheitszuschlag; abgerissener Wagen ohne Stromaufnahme bleibt unerkannt (akzeptiertes Restrisiko) |
 | 13 | 2026-11-03 | Züge dürfen Blöcke durchfahren, die kürzer sind als sie | Ergibt sich aus der längenbasierten Belegung | Belegt sind alle Abschnitte von Spitze bis Zugschluss; Längenprüfung gilt für Haltebereiche |

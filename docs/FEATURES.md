@@ -1,4 +1,4 @@
-# Bahnsteuerung – Anforderungen und Meilensteine
+# RailCore – Anforderungen und Meilensteine
 
 Stand: 03.11.2026. Eigene Modellbahn-Steuerung (Java 21), Ablage `D:\Claude\itrain`.
 

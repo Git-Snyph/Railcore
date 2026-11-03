@@ -14,7 +14,7 @@ java {
 repositories { mavenCentral() }
 
 application {
-    mainClass = 'at.schmoegl.bahnsteuerung.ui.App'
+    mainClass = 'at.schmoegl.railcore.ui.App'
 }
 
 tasks.withType(JavaCompile).configureEach {
@@ -27,7 +27,7 @@ tasks.register('selfTest', JavaExec) {
     group = 'verification'
     description = 'Führt die Tests unter src/test aus.'
     classpath = sourceSets.test.runtimeClasspath
-    mainClass = 'at.schmoegl.bahnsteuerung.TestRunner'
+    mainClass = 'at.schmoegl.railcore.TestRunner'
 }
 tasks.named('check') { dependsOn 'selfTest' }
 
