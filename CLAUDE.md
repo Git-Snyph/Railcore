@@ -72,6 +72,7 @@ Logo: `docs/bilder/railcore-logo.png`. Programmsymbol: `docs/bilder/railcore-ico
 
 - Kleine, in sich geschlossene Commits mit deutscher Nachricht (erste Zeile = was und warum).
 - Neue Arbeit auf einem eigenen Branch, nicht direkt auf `main`.
+- Zu Beginn jeder Sitzung git fetch ausführen; gibt es auf origin/main neue Commits, den Nutzer informieren und nach Bestätigung übernehmen.
 
 ## Stand
 

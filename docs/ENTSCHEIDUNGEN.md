@@ -4,6 +4,7 @@ Jede Entscheidung: Datum · was · warum · Folgen. Neue Einträge oben anfügen
 
 | Nr. | Datum | Entscheidung | Begründung | Folgen |
 | --- | --- | --- | --- | --- |
+| 19 | 2026-11-03 | Repository wird nur noch über Claude Code geändert; der Chat im Projekt „Moba Steuerung“ liefert Konzept, Lastenheft, Entscheidungen und fertige Aufträge | Eine einzige Quelle für Änderungen, kein Auseinanderlaufen von lokalem Stand und GitHub | Claude Code prüft zu Sitzungsbeginn mit git fetch auf neue Commits und übernimmt sie nach Rückfrage |
 | 18 | 2026-11-03 | Java 25 LTS (Eclipse Temurin) statt Java 21; ersetzt den Java-Teil von Nr. 2 | Längere Unterstützung, virtuelle Threads ohne Blockade bei synchronized, generationaler ZGC mit kurzen Pausen, Wechsel im frühen Stadium ohne Aufwand | Gradle-Wrapper 9.x nötig; Build-Toolchain auf 25 |
 | 17 | 2026-11-03 | Logo „RailCore – Railway Control & Operations“ (docs/bilder/railcore-logo.png); Hausfarben Nachtblau #08121C, Signalrot #EB1C24, Weiß | Einheitliches Erscheinungsbild für Programm, Installer und Apps | Dunkles FlatLaf-Thema in diesen Farben; Programmsymbol (Zugsilhouette mit Gleis, ohne Schrift) als PNG und ICO, transparente Ecken |
 | 16 | 2026-11-03 | Projektname RailCore mit Produktbereichen (Control, Studio, Fleet, Decoder, Timetable, Diagnostics, Simulator, Connect, Mobile) | Klare Gliederung für Oberfläche, Code und spätere Apps | Ein gemeinsamer Kern und eine Datenbank; Java-Paket at.schmoegl.railcore |
