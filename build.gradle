@@ -1,0 +1,36 @@
+plugins {
+    id 'java'
+    id 'application'
+}
+
+group = 'at.schmoegl'
+version = '0.1.0'
+
+java {
+    toolchain { languageVersion = JavaLanguageVersion.of(21) }
+}
+
+// Bewusst ohne externe Abhängigkeiten: baut auch offline.
+repositories { mavenCentral() }
+
+application {
+    mainClass = 'at.schmoegl.bahnsteuerung.ui.App'
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+    options.compilerArgs += ['-Xlint:all,-serial']
+}
+
+// Kleiner eigener Testlauf (kein JUnit nötig): führt alle *Test-Klassen aus.
+tasks.register('selfTest', JavaExec) {
+    group = 'verification'
+    description = 'Führt die Tests unter src/test aus.'
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'at.schmoegl.bahnsteuerung.TestRunner'
+}
+tasks.named('check') { dependsOn 'selfTest' }
+
+jar {
+    manifest { attributes 'Main-Class': application.mainClass }
+}
