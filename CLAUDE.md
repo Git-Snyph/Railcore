@@ -44,7 +44,7 @@ Wenn eine Aufgabe einem dieser Grundsätze widerspricht: nicht umsetzen, sondern
 
 ## Code und Tests
 
-- Paket: `at.schmoegl.railcore`. Bauen mit dem Gradle-Wrapper (`gradlew build`, Gradle 9.x – ältere Versionen unterstützen Java 25 nicht), JDK 25 (Eclipse Temurin). Der Wrapper fehlt noch und ist als Erstes einzurichten.
+- Paket: `at.schmoegl.railcore`. Bauen mit dem Gradle-Wrapper (`gradlew build`, Gradle 9.x – ältere Versionen unterstützen Java 25 nicht), JDK 25 (Eclipse Temurin). Wrapper: Gradle 9.8.2; Tests laufen über den eigenen `selfTest` (`TestRunner`, ohne JUnit).
 - Jede neue Logik mit Test. Protokoll-Kodierung gegen bekannte Bytefolgen testen, Sicherheitsverhalten im Simulator (Fehlerkatalog im Lastenheft, Abschnitt 7).
 - Kein Merge, wenn Tests fehlschlagen.
 - Fremdbibliotheken sparsam und nur mit Begründung im Entscheidungsprotokoll.
