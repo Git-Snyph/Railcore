@@ -58,6 +58,7 @@ Logo: `docs/bilder/railcore-logo.png`. Programmsymbol: `docs/bilder/railcore-ico
 - Eine abgegrenzte Aufgabe pro Sitzung; nur die Dateien lesen, die die Aufgabe betrifft.
 - Bilder, Build-Ausgaben, Protokolle, Datenbanken und Archive nicht lesen (gesperrt in `.claude/settings.json`).
 - Builds und Tests leise ausführen (`gradlew build -q`), vollständige Ausgaben nur bei Fehlern.
+- **Erinnerung an den Nutzer:** Bevor der MobaDB-Import (Excel) beginnt, den Nutzer darauf hinweisen, dass `Read(./**/*.xlsx)` in `.claude/settings.json` gesperrt ist und für den Import vorübergehend entfernt (und danach wieder eingetragen) werden muss.
 - Lastenheft nicht komplett lesen; bei Bedarf den betroffenen Abschnitt erfragen oder `docs/` nutzen.
 
 ## Commits
