@@ -4,7 +4,7 @@ Jede Entscheidung: Datum · was · warum · Folgen. Neue Einträge oben anfügen
 
 | Nr. | Datum | Entscheidung | Begründung | Folgen |
 | --- | --- | --- | --- | --- |
-| 17 | 2026-11-03 | Logo „RailCore – Railway Control & Operations“ (docs/bilder/railcore-logo.png); Hausfarben Nachtblau #08121C, Signalrot #EB1C24, Weiß | Einheitliches Erscheinungsbild für Programm, Installer und Apps | Dunkles FlatLaf-Thema in diesen Farben; quadratisches Programmsymbol aus dem Logo ableiten |
+| 17 | 2026-11-03 | Logo „RailCore – Railway Control & Operations“ (docs/bilder/railcore-logo.png); Hausfarben Nachtblau #08121C, Signalrot #EB1C24, Weiß | Einheitliches Erscheinungsbild für Programm, Installer und Apps | Dunkles FlatLaf-Thema in diesen Farben; Programmsymbol (Zugsilhouette mit Gleis, ohne Schrift) als PNG und ICO, transparente Ecken |
 | 16 | 2026-11-03 | Projektname RailCore mit Produktbereichen (Control, Studio, Fleet, Decoder, Timetable, Diagnostics, Simulator, Connect, Mobile) | Klare Gliederung für Oberfläche, Code und spätere Apps | Ein gemeinsamer Kern und eine Datenbank; Java-Paket at.schmoegl.railcore |
 | 15 | 2026-11-03 | Entwicklung in Claude Code mit privatem GitHub-Repository | Code liegt dauerhaft im Repository, wird gebaut und automatisch getestet | Simulator-Tests laufen bei jeder Änderung |
 | 14 | 2026-11-03 | Zugschluss längenbasiert; Widerstandsachsen optional | Alle Fahrzeug-, Block-, Weichen- und Fahrstraßenlängen werden gepflegt; Umbau aller Wagen nicht nötig | Freigabe erst nach berechnetem Zugschluss + Sicherheitszuschlag; abgerissener Wagen ohne Stromaufnahme bleibt unerkannt (akzeptiertes Restrisiko) |
