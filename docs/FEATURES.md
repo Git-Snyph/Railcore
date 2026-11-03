@@ -1,6 +1,6 @@
 # RailCore – Anforderungen und Meilensteine
 
-Stand: 03.11.2026. Eigene Modellbahn-Steuerung (Java 25), Repository Git-Snyph/Railcore, lokal `D:\Claude\railcore`.
+Stand: 03.11.2026. Eigene Modellbahn-Steuerung (Java 25), Repository Git-Snyph/Railcore, lokal `D:\Claude\Railcore` (eigener Modellbahn-Rechner).
 
 ## Hardware (Ist-Stand laut MobaDB)
 - Zentrale: Roco Z21 (schwarz) 10820, 2× Dual Booster 10807 (ZS1/ZS2, Fahr), CAN-Hub 10804, Pro Link, Z21 WLAN-Maus, Zimo KLUG
@@ -52,6 +52,7 @@ Stand: 03.11.2026. Eigene Modellbahn-Steuerung (Java 25), Repository Git-Snyph/R
 ### Schnittstellen nach außen
 - [ ] REST-API + Live-Ereignisse (SSE)
 - [ ] MQTT mit Home-Assistant-Discovery
+- [ ] Home-Assistant-Geräte aus RailCore schalten und abfragen (Schalter, Steckdosen, Licht, Szenen, Sensoren) – nur Komfort, keine Sicherheitsfunktion
 - [ ] iOS- und Android-App zum Steuern (später; nutzt die Netzwerk-Schnittstelle des Kerns)
 
 ## Meilensteine

@@ -30,6 +30,8 @@ tasks.register('selfTest', JavaExec) {
     mainClass = 'at.schmoegl.railcore.TestRunner'
 }
 tasks.named('check') { dependsOn 'selfTest' }
+// Der Standard-Testtask (JUnit) fände keine Tests und schlüge seit Gradle 9 fehl.
+tasks.named('test') { enabled = false }
 
 jar {
     manifest { attributes 'Main-Class': application.mainClass }
