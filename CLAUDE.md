@@ -61,6 +61,13 @@ Logo: `docs/bilder/railcore-logo.png`. Programmsymbol: `docs/bilder/railcore-ico
 - **Erinnerung an den Nutzer:** Bevor der MobaDB-Import (Excel) beginnt, den Nutzer darauf hinweisen, dass `Read(./**/*.xlsx)` in `.claude/settings.json` gesperrt ist und für den Import vorübergehend entfernt (und danach wieder eingetragen) werden muss.
 - Lastenheft nicht komplett lesen; bei Bedarf den betroffenen Abschnitt erfragen oder `docs/` nutzen.
 
+## Modellwahl
+
+- Standardmodell ist Sonnet (`.claude/settings.json`).
+- Sicherheitsrelevante Kernlogik (safety/, train/, z21/, Reservierungen, Fahrstraßen, Positionsberechnung, Bremskurven, Befehlsplaner, Watchdog, Wiederanlauf, Z21-Prüfprogramm) an den Agenten **railcore-kern** (Opus) übergeben.
+- Routine (Tests, Doku, Umbenennungen, Build-Konfiguration) an **railcore-routine** (Sonnet) übergeben.
+- Ist eine ganze Sitzung überwiegend Kernlogik, dem Nutzer zu Beginn empfehlen, die Sitzung auf Opus umzustellen.
+
 ## Commits
 
 - Kleine, in sich geschlossene Commits mit deutscher Nachricht (erste Zeile = was und warum).
