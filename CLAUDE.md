@@ -49,6 +49,10 @@ Wenn eine Aufgabe einem dieser Grundsätze widerspricht: nicht umsetzen, sondern
 - Kein Merge, wenn Tests fehlschlagen.
 - Fremdbibliotheken sparsam und nur mit Begründung im Entscheidungsprotokoll.
 
+## Erscheinungsbild
+
+Logo: `docs/bilder/railcore-logo.png`. Hausfarben: Nachtblau `#08121C` (Hintergrund), Signalrot `#EB1C24` (Akzent), Weiß (Schrift). Rot in der Oberfläche sparsam – es ist auch die Farbe für Nothalt und Störungen.
+
 ## Commits
 
 - Kleine, in sich geschlossene Commits mit deutscher Nachricht (erste Zeile = was und warum).

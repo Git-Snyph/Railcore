@@ -1,3 +1,5 @@
+<p align="center"><img src="docs/bilder/railcore-logo.png" alt="RailCore – Railway Control &amp; Operations" width="700"></p>
+
 # RailCore
 
 **Railway Control & Operations**
