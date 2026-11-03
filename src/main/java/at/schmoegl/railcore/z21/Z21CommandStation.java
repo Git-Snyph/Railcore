@@ -32,7 +32,6 @@ public class Z21CommandStation extends AbstractCommandStation {
     private final int pollMs;
     private volatile DatagramSocket socket;
     private volatile boolean connected;
-    private volatile long lastReceiveNanos;
     private ScheduledExecutorService scheduler;
     private Thread receiver;
     /** Letzter bekannter Zustand der 20 R-Bus-Module, um Einzeländerungen zu erkennen. */
@@ -55,7 +54,6 @@ public class Z21CommandStation extends AbstractCommandStation {
         socket = new DatagramSocket();
         socket.setSoTimeout(1000);
         connected = true;
-        lastReceiveNanos = System.nanoTime();
         receiver = new Thread(this::receiveLoop, "z21-empfang");
         receiver.setDaemon(true);
         receiver.start();
@@ -166,7 +164,6 @@ public class Z21CommandStation extends AbstractCommandStation {
                 DatagramPacket p = new DatagramPacket(buf, buf.length);
                 socket.receive(p);
                 long now = System.nanoTime();
-                lastReceiveNanos = now;
                 fire(l -> l.onHeartbeat(now));
                 for (Z21Message m : Z21Protocol.decode(p.getData(), p.getLength())) handle(m, now);
             } catch (SocketTimeoutException ignored) {
@@ -189,9 +186,9 @@ public class Z21CommandStation extends AbstractCommandStation {
             case Z21Message.CanRailCom rc -> handleCanRailCom(rc, now);
             case Z21Message.CvResult cv -> fire(l -> l.onCvResult(cv.cv(), cv.value()));
             case Z21Message.CvFailed cf -> fire(l -> l.onCvFailed(cf.reason()));
-            case Z21Message.SerialNumber s -> { }
-            case Z21Message.FirmwareVersion v -> { }
-            case Z21Message.Unknown u -> { }
+            case Z21Message.SerialNumber _ -> { }
+            case Z21Message.FirmwareVersion _ -> { }
+            case Z21Message.Unknown _ -> { }
         }
     }
 
