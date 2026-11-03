@@ -1,6 +1,6 @@
 # RailCore – Anforderungen und Meilensteine
 
-Stand: 03.11.2026. Eigene Modellbahn-Steuerung (Java 21), Ablage `D:\Claude\itrain`.
+Stand: 03.11.2026. Eigene Modellbahn-Steuerung (Java 25), Repository Git-Snyph/Railcore, lokal `D:\Claude\railcore`.
 
 ## Hardware (Ist-Stand laut MobaDB)
 - Zentrale: Roco Z21 (schwarz) 10820, 2× Dual Booster 10807 (ZS1/ZS2, Fahr), CAN-Hub 10804, Pro Link, Z21 WLAN-Maus, Zimo KLUG
@@ -10,7 +10,7 @@ Stand: 03.11.2026. Eigene Modellbahn-Steuerung (Java 21), Ablage `D:\Claude\itra
 - Maßstab H0, 128 Fahrstufen
 
 ## Technik
-- Eigenständiges Desktop-Programm (keine Web-Oberfläche): Java 21, Swing + FlatLaf, Live-Gleisbild mit Java2D
+- Eigenständiges Desktop-Programm (keine Web-Oberfläche): Java 25, Swing + FlatLaf, Live-Gleisbild mit Java2D
 - Auslieferung als Windows-Programm mit Installer (jpackage, Java mitgeliefert)
 - Kern (Steuerung, Automatik) intern getrennt von der Oberfläche; API/MQTT greifen auf den Kern zu
 

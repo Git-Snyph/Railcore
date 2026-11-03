@@ -4,7 +4,7 @@
 
 **Railway Control & Operations**
 
-Eigene Modellbahn-Steuerung (Java 21) für Roco Z21 mit Z21 Detector 10808 (CAN, RailCom).
+Eigene Modellbahn-Steuerung (Java 25) für Roco Z21 mit Z21 Detector 10808 (CAN, RailCom).
 
 Stand: Grundgerüst des Kerns (Meilenstein 1, in Arbeit) – noch nicht lauffähig als Programm.
 
@@ -21,6 +21,6 @@ Stand: Grundgerüst des Kerns (Meilenstein 1, in Arbeit) – noch nicht lauffäh
 Das vollständige technische Lastenheft liegt als Dokument „RailCore – Technisches Lastenheft“ in claude.ai.
 
 ## Bauen
-Voraussetzung: JDK 21 und Gradle.
+Voraussetzung: JDK 25 (z. B. Eclipse Temurin 25). Gradle wird über den Wrapper geladen (`gradlew.bat build`), sobald er eingerichtet ist.
 
     gradle build

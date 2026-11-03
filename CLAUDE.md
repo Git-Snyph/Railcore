@@ -1,6 +1,6 @@
 # RailCore – Arbeitsanweisung für Claude
 
-RailCore ist eine eigene Modellbahn-Steuerung (Java 21, Desktop) für eine Roco Z21 mit Z21 Detector 10808 (CAN, RailCom).
+RailCore ist eine eigene Modellbahn-Steuerung (Java 25, Desktop) für eine Roco Z21 mit Z21 Detector 10808 (CAN, RailCom).
 Ziel: bis zu 100 Züge vollautomatisch, wegbasiert und sicher fahren, mit Handbetrieb unter Zugbeeinflussung.
 
 Maßgebliche Unterlagen:
@@ -44,7 +44,7 @@ Wenn eine Aufgabe einem dieser Grundsätze widerspricht: nicht umsetzen, sondern
 
 ## Code und Tests
 
-- Paket: `at.schmoegl.railcore`. Bauen mit Gradle (`gradle build`), JDK 21.
+- Paket: `at.schmoegl.railcore`. Bauen mit dem Gradle-Wrapper (`gradlew build`, Gradle 9.x – ältere Versionen unterstützen Java 25 nicht), JDK 25 (Eclipse Temurin). Der Wrapper fehlt noch und ist als Erstes einzurichten.
 - Jede neue Logik mit Test. Protokoll-Kodierung gegen bekannte Bytefolgen testen, Sicherheitsverhalten im Simulator (Fehlerkatalog im Lastenheft, Abschnitt 7).
 - Kein Merge, wenn Tests fehlschlagen.
 - Fremdbibliotheken sparsam und nur mit Begründung im Entscheidungsprotokoll.

@@ -7,7 +7,7 @@ group = 'at.schmoegl'
 version = '0.1.0'
 
 java {
-    toolchain { languageVersion = JavaLanguageVersion.of(21) }
+    toolchain { languageVersion = JavaLanguageVersion.of(25) }
 }
 
 // Bewusst ohne externe Abhängigkeiten: baut auch offline.

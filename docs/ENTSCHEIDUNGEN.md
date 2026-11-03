@@ -4,6 +4,7 @@ Jede Entscheidung: Datum · was · warum · Folgen. Neue Einträge oben anfügen
 
 | Nr. | Datum | Entscheidung | Begründung | Folgen |
 | --- | --- | --- | --- | --- |
+| 18 | 2026-11-03 | Java 25 LTS (Eclipse Temurin) statt Java 21; ersetzt den Java-Teil von Nr. 2 | Längere Unterstützung, virtuelle Threads ohne Blockade bei synchronized, generationaler ZGC mit kurzen Pausen, Wechsel im frühen Stadium ohne Aufwand | Gradle-Wrapper 9.x nötig; Build-Toolchain auf 25 |
 | 17 | 2026-11-03 | Logo „RailCore – Railway Control & Operations“ (docs/bilder/railcore-logo.png); Hausfarben Nachtblau #08121C, Signalrot #EB1C24, Weiß | Einheitliches Erscheinungsbild für Programm, Installer und Apps | Dunkles FlatLaf-Thema in diesen Farben; Programmsymbol (Zugsilhouette mit Gleis, ohne Schrift) als PNG und ICO, transparente Ecken |
 | 16 | 2026-11-03 | Projektname RailCore mit Produktbereichen (Control, Studio, Fleet, Decoder, Timetable, Diagnostics, Simulator, Connect, Mobile) | Klare Gliederung für Oberfläche, Code und spätere Apps | Ein gemeinsamer Kern und eine Datenbank; Java-Paket at.schmoegl.railcore |
 | 15 | 2026-11-03 | Entwicklung in Claude Code mit privatem GitHub-Repository | Code liegt dauerhaft im Repository, wird gebaut und automatisch getestet | Simulator-Tests laufen bei jeder Änderung |
@@ -19,5 +20,5 @@ Jede Entscheidung: Datum · was · warum · Folgen. Neue Einträge oben anfügen
 | 5 | 2026-11-03 | SQLite maßgeblich, JSON nur Austausch/Sicherung | Transaktionen, Versionierung, Migrationen | Gleisplan versioniert mit Rückgängig |
 | 4 | 2026-11-03 | Ein zentraler Steuerungs-Executor für alle Zustandsänderungen | Keine Race Conditions bei Reservierungen | Kommunikation in eigenen Threads, Swing nur auf dem EDT |
 | 3 | 2026-11-03 | Wegbasierte Positionsberechnung; Rückmelder und RailCom sind Abgleichpunkte | Bremsen und Halten unabhängig von Brems-/Haltemeldern | Einmessen aller Loks/Züge nötig |
-| 2 | 2026-11-03 | Java 21, Swing + FlatLaf, eigenständiges Desktop-Programm, keine Web-Oberfläche | Wunsch nach Programm statt Browser; stabil im Dauerbetrieb | Kern getrennt von Oberfläche, API für Home Assistant und Apps |
+| 2 | 2026-11-03 | Java 21 (Java-Version ersetzt durch Nr. 18), Swing + FlatLaf, eigenständiges Desktop-Programm, keine Web-Oberfläche | Wunsch nach Programm statt Browser; stabil im Dauerbetrieb | Kern getrennt von Oberfläche, API für Home Assistant und Apps |
 | 1 | 2026-11-03 | Eigene Steuerung statt iTrain-Weiterentwicklung | Keine belegte Erlaubnis zum Dekompilieren; iTrain-Lizenz verbietet es | Keine iTrain-Bestandteile im Projekt |
