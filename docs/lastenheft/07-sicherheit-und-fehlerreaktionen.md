@@ -50,8 +50,8 @@ Die echte Lok erhält damit nie einen ungeprüften Handbefehl. Fällt RailCore a
 **Zugschluss und Zugvollständigkeit** *(P1, längenbasiert)*: Grundlage ist die gepflegte Länge aller Fahrzeuge, Blöcke, Weichen und Fahrstraßen. Widerstandsachsen sind nicht verpflichtend, sondern ein Zusatznutzen.
 
 - Die Steuerung berechnet aus Zugspitze und Zuglänge laufend, wo der Zugschluss ist. Ein Zug, der mit dem Ende noch im vorherigen Block oder in einer Weiche steht, belegt und blockiert diese, bis er sie vollständig verlassen hat.
-- Freigegeben wird ein Abschnitt erst, wenn der berechnete Zugschluss ihn plus **Sicherheitszuschlag** verlassen hat: Positionsunsicherheit plus 5 % der Zuglänge, mindestens 50 mm (einstellbar).
-- Ist der letzte Wagen stromaufnehmend (Widerstandsachse, Schlussbeleuchtung), muss zusätzlich die Freimeldung des Abschnitts kommen; widerspricht sie der Rechnung, hält der Zug („Wagen verloren?“).
+- Freigegeben wird ein Abschnitt erst, wenn sowohl der berechnete Zugschluss ihn plus **Sicherheitszuschlag** verlassen hat (Positionsunsicherheit plus 5 % der Zuglänge, mindestens 50 mm, einstellbar) **als auch** der Meldeabschnitt frei meldet; „unbekannt“ zählt nie als frei (Entscheidung 40).
+- Ist der letzte Wagen stromaufnehmend (Widerstandsachse, Schlussbeleuchtung), kommt die Freimeldung ohnehin meist früher; widerspricht sie der Rechnung, hält der Zug („Wagen verloren?“).
 - Je Wagen wird geführt: Länge über Puffer, stromführend ja/nein, Widerstandsachse.
 - **Bewusst akzeptiertes Restrisiko:** Ohne stromaufnehmenden Wagen am Zugende erkennt die Steuerung einen abgerissenen Wagen nicht; er bleibt unbemerkt im Gleis. Ein Zug mit gepflegter Zugschluss-Erkennung wird in der Oberfläche entsprechend gekennzeichnet.
 
