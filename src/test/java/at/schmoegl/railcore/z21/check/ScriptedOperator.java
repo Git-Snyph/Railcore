@@ -18,8 +18,13 @@ final class ScriptedOperator implements Operator {
     private final Deque<String> answers = new ArrayDeque<>();
     private String pending;
     String typeAhead;
+    /** Simuliert geschlossene Eingabe (keine Konsole): poll() liefert wie die Konsole eine leere Zeile. */
+    boolean inputClosed;
 
     ScriptedOperator(String... answers) { this.answers.addAll(List.of(answers)); }
+
+    @Override
+    public boolean isInputClosed() { return inputClosed; }
 
     @Override
     public void info(String text) { infos.add(text); }
@@ -33,6 +38,7 @@ final class ScriptedOperator implements Operator {
 
     @Override
     public String poll() {
+        if (inputClosed) return "";
         if (typeAhead != null) {
             String t = typeAhead;
             typeAhead = null;

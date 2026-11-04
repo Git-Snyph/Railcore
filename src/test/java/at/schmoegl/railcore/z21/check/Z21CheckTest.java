@@ -99,6 +99,22 @@ public class Z21CheckTest {
         assertEquals(Outcome.CONFIRMED, f(r, "F29–F31").outcome());
     }
 
+    public void testClosedInputDoesNotEndObservation() {
+        ScriptedOperator op = new ScriptedOperator();
+        op.inputClosed = true;
+        long start = sim.clock.nanoTime();
+        run(op);
+        assertEquals(0, journal.byCode("BEDIENEREINGABE").size());
+        assertEquals(true, sim.clock.nanoTime() - start >= 2_000_000_000L);
+    }
+
+    public void testClosedInputRefusesActiveStage() {
+        ScriptedOperator op = new ScriptedOperator();
+        op.inputClosed = true;
+        run(op, "--stufe", "aktiv");
+        for (byte[] p : sim.sent) assertEquals(false, CommandClass.of(p) == CommandClass.ACTIVE);
+    }
+
     public void testMouseCommandOnProxyIsDetected() {
         sim.broadcastAt(800, sim.locoInfo(9001));
         CheckReport r = run(new ScriptedOperator());

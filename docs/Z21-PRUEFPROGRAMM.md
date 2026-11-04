@@ -35,3 +35,12 @@ Jeder Eingriff wird im Klartext angekündigt und nur nach der Eingabe `JA` (Gro�
 
 - Ergebnisse ohne Rückmeldung stehen als „unbekannt“, nie als in Ordnung. Punkte mit „an Hardware zu prüfen“ sind in ihrer Deutung nicht gesichert.
 - Wird das Programm hart beendet (z. B. Fenster geschlossen, Gradle-Abbruch), läuft der Shutdown-Hook unter Umständen nicht. Die Z21 sendet dann die letzte Fahrstufe an die Stellvertreter-Adresse weiter – deshalb Fahrstufe klein halten und auf dieser Adresse keinen Decoder betreiben.
+
+## Ergebnisse an der Anlage
+
+### 04.11.2026 – erster passiver Lauf
+- Z21 schwarz (Variante 2013), Seriennummer 155703, Firmware 1.43; alle Broadcast-Flags übernommen; Antwortzeiten 1–22 ms.
+- CAN-Detector 10808: Module 7–10 und 14–17 antworten. Module 1–6 und 11–13 sind noch nicht angeschlossen (Auskunft Nutzer).
+- RailCom-Adressen 8888 und 8000 (Modul 14, Eingänge 2 und 5) sind echte Lokadressen – Adressdekodierung damit an Hardware bestätigt. Deutung der Richtungsbits (Rohwerte 2 und 3) weiter offen.
+- **Offen, zurückgestellt: R-Bus-Versatz um ein Modul.** Die Z21 spiegelt die CAN-Belegung in die R-Bus-Daten; das Muster von CAN-Modul 14 erscheint als R-Bus-Modul 15, das von Modul 15 als Modul 16. R-Bus-Daten dürfen nirgends genutzt werden, bevor die Zählung geklärt und mit einem Test abgesichert ist.
+- Beobachtung und WLAN-Maus nicht geprüft: Lauf ohne Konsole, die Beobachtung brach sofort ab (Fehler, behoben: geschlossene Eingabe beendet die Beobachtung nicht mehr). Nächster Lauf in einem eigenen PowerShell-Fenster.

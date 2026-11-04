@@ -192,8 +192,11 @@ public final class Z21Check {
             op.discardPending();
             journal.info(SRC, "BEOBACHTUNG", "Mitschnitt " + cfg.observeSeconds() + " s");
             long end = time.nanoTime() + cfg.observeSeconds() * 1000L * MS;
+            // Geschlossene Eingabe (keine Konsole) ist keine Bedienereingabe: Beobachtung läuft die volle Zeit.
+            boolean inputClosed = op.isInputClosed();
+            if (inputClosed) journal.info(SRC, "BEOBACHTUNG", "Eingabe geschlossen – Beobachtung läuft die volle Zeit");
             while (time.nanoTime() < end) {
-                if (op.poll() != null) {
+                if (!inputClosed && op.poll() != null) {
                     journal.info(SRC, "BEDIENEREINGABE", "Beobachtung vorzeitig beendet");
                     break;
                 }
