@@ -44,7 +44,7 @@ Oberflächen enthalten keine Steuerlogik: Sie senden Befehle an die Steuerungs-S
 
 | Modul | Aufgabe | Priorität |
 | --- | --- | --- |
-| SystemHealthManager | Gesamtzustand der Anlage, Ampel, Hardware-Watchdog | P1 |
+| SystemHealthManager | Gesamtzustand der Anlage, Ampel, interner Watchdog | P1 |
 | CommissioningManager | Selbsttest, Inbetriebnahme, Lernfahrt | P1 |
 | CommandScheduler | Befehlswarteschlange, DCC-Budget, Priorisierung | P1 |
 | MotionController | Trägheit, Bremskurven, Geschwindigkeitsvorgaben | P1 |

@@ -38,7 +38,7 @@ Eingemessen wird das Grundverhalten der Lok (Geschwindigkeit je Fahrstufe, Reakt
 
 **Geschwindigkeitsvorgaben auf der Strecke:** dauerhafte und temporäre Langsamfahrstellen, Begrenzung vor und in Weichen abhängig von der Lage (gerade/abzweigend), signalabhängige Geschwindigkeit, Höchstgeschwindigkeit je Fahrzeug und je Zugverband (es gilt der kleinste Wert). Bremsprofile: Betriebsbremsung und Notbremsung getrennt, je Zug und je Streckenabschnitt; Nachkalibrierung nach wiederholten Messungen. Eine grafische **Bremskurven-Ansicht** zeigt je Zug Position, Geschwindigkeit, zulässige Höchstgeschwindigkeit, Bremsbeginn, Sicherheitsabstand, Ziel, Unsicherheit und den tatsächlichen Verlauf; Parameter lassen sich dort anpassen.
 
-**Risiko bei Ausfall des PCs:** Die Z21 fährt die zuletzt gesendete Fahrstufe weiter, wenn die Steuerung abstürzt. Gesichert wird das durch einen Hardware-Watchdog (siehe Abschnitt 7).
+**Risiko bei Ausfall des PCs:** Die Z21 fährt die zuletzt gesendete Fahrstufe weiter, wenn die Steuerung abstürzt oder die Netzwerkverbindung ganz abreißt. Ein externer Hardware-Watchdog wird nicht gebaut (Entscheidung 38); das ist ein bewusst akzeptiertes Restrisiko (siehe Abschnitt 7).
 
 **Abgleich und Unsicherheit**
 
