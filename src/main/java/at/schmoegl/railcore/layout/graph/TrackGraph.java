@@ -230,8 +230,10 @@ public final class TrackGraph {
 
         private static final Pattern INSTANCE_ID = Pattern.compile("[^.:~\\s]+");
 
+        /** Verlegtes Stück mit seinen Instanzwerten (nur die zur Art passenden sind gesetzt, sonst {@code null}). */
         private record Placement(String instanceId, TrackPiece piece, List<String> turnoutIds, TurnoutBranches branches,
-                                 TrackPiece.DoubleSlipLengths routeLengths) {}
+                                 TrackPiece.DoubleSlipLengths routeLengths, TrackPiece.CrossingDimensions crossing,
+                                 Double plainLengthMm) {}
 
         private record PortRef(String instanceId, Port port) {
             @Override public String toString() { return instanceId + "." + port; }
@@ -247,17 +249,50 @@ public final class TrackGraph {
         private Builder() {}
 
         /**
-         * Verlegt ein einfaches Stück (gerade, Bogen, Flexgleis) oder eine Kreuzung. Weichen und
-         * Doppelkreuzungsweichen brauchen eigene Maße je verlegtem Stück und werden mit {@link #placeTurnout} bzw.
-         * {@link #placeDoubleSlip} verlegt; hier sind sie ein Fehler, damit nie stillschweigend der Typ-Vorschlag gilt.
+         * Verlegt ein gerades Stück, einen Bogen oder Flexgleis mit der Länge aus dem Typ. Weichen,
+         * Doppelkreuzungsweichen und Kreuzungen brauchen eigene Maße je verlegtem Stück ({@link #placeTurnout},
+         * {@link #placeDoubleSlip}, {@link #placeCrossing}); hier sind sie ein Fehler, damit nie stillschweigend der
+         * Typ-Vorschlag gilt.
          */
         public Builder place(String instanceId, TrackPiece piece) {
-            if (piece instanceof TrackPiece.TurnoutPiece || piece instanceof TrackPiece.DoubleSlipPiece) {
-                problems.add("Stück " + instanceId + ": Weiche braucht eigene Längen und Grenzzeichen je verlegter Weiche"
-                        + " (Entscheidung 41) – mit placeTurnout bzw. placeDoubleSlip verlegen");
+            if (!(piece instanceof TrackPiece.PlainPiece) && piece != null) {
+                problems.add("Stück " + instanceId + ": " + piece.getClass().getSimpleName() + " braucht eigene Maße je"
+                        + " verlegtem Stück (Entscheidungen 41, 42) – mit placeTurnout, placeDoubleSlip bzw. placeCrossing"
+                        + " verlegen");
                 return this;
             }
-            return add(instanceId, piece, List.of(), null, null);
+            return add(instanceId, piece, List.of(), null, null, null, null);
+        }
+
+        /**
+         * Verlegt ein gerades Stück oder einen Bogen mit eigener Länge {@code lengthMm}, die die Länge aus dem Typ
+         * überschreibt (z. B. gekürztes Stück, gemessene Länge).
+         *
+         * <p>Vorläufige Festlegung (Entscheidung 42), ausdrücklich später änderbar: überschrieben wird nur die Länge,
+         * nicht Radius oder Winkel; die Geometrie des Typs bleibt für Zeichnung und Schließprüfung (B3) unverändert.
+         */
+        public Builder place(String instanceId, TrackPiece piece, double lengthMm) {
+            if (!(piece instanceof TrackPiece.PlainPiece)) {
+                problems.add("Stück " + instanceId + ": eigene Länge nur für gerade Stücke und Bögen");
+                return this;
+            }
+            if (!(lengthMm > 0) || !Double.isFinite(lengthMm)) {
+                problems.add("Stück " + instanceId + ": eigene Länge muss größer 0 sein: " + lengthMm);
+                return this;
+            }
+            return add(instanceId, piece, List.of(), null, null, null, lengthMm);
+        }
+
+        /**
+         * Verlegt eine Kreuzung mit den Maßen dieser Kreuzung (maßgeblich, Entscheidung 42); der Vorschlag des Typs
+         * ({@link TrackPiece.CrossingPiece#suggestion()}) wird nicht gelesen. Vorläufig, später änderbar.
+         */
+        public Builder placeCrossing(String instanceId, TrackPiece.CrossingPiece piece, TrackPiece.CrossingDimensions dimensions) {
+            if (dimensions == null) {
+                problems.add("Kreuzung " + instanceId + ": Maße fehlen");
+                return this;
+            }
+            return add(instanceId, piece, List.of(), null, null, dimensions, null);
         }
 
         /**
@@ -272,7 +307,7 @@ public final class TrackGraph {
                 problems.add("Weiche " + instanceId + ": Zweiglängen und Grenzzeichen fehlen");
                 return this;
             }
-            return add(instanceId, piece, List.of(turnoutId), branches, null);
+            return add(instanceId, piece, List.of(turnoutId), branches, null, null, null);
         }
 
         /**
@@ -285,11 +320,12 @@ public final class TrackGraph {
                 problems.add("Doppelkreuzungsweiche " + instanceId + ": Fahrweglängen fehlen");
                 return this;
             }
-            return add(instanceId, piece, List.of(turnoutIdA, turnoutIdB), null, routeLengths);
+            return add(instanceId, piece, List.of(turnoutIdA, turnoutIdB), null, routeLengths, null, null);
         }
 
         private Builder add(String instanceId, TrackPiece piece, List<String> turnoutIds, TurnoutBranches branches,
-                            TrackPiece.DoubleSlipLengths routeLengths) {
+                            TrackPiece.DoubleSlipLengths routeLengths, TrackPiece.CrossingDimensions crossing,
+                            Double plainLengthMm) {
             if (instanceId == null || !INSTANCE_ID.matcher(instanceId).matches()) {
                 problems.add("Ungültige Stückkennung: '" + instanceId + "'");
                 return this;
@@ -303,7 +339,8 @@ public final class TrackGraph {
                     problems.add("Stück " + instanceId + ": Weichenkennung fehlt");
                     return this;
                 }
-            if (placements.putIfAbsent(instanceId, new Placement(instanceId, piece, turnoutIds, branches, routeLengths)) != null)
+            if (placements.putIfAbsent(instanceId, new Placement(instanceId, piece, turnoutIds, branches, routeLengths, crossing,
+                    plainLengthMm)) != null)
                 problems.add("Stückkennung doppelt: " + instanceId);
             return this;
         }
@@ -439,7 +476,8 @@ public final class TrackGraph {
             String id = p.instanceId();
             switch (p.piece()) {
                 case TrackPiece.PlainPiece plain -> {
-                    EdgeDraft d = draft(drafts, id, plain.lengthMm(), id, TrackEdge.Role.PLAIN);
+                    double length = p.plainLengthMm() != null ? p.plainLengthMm() : plain.lengthMm();
+                    EdgeDraft d = draft(drafts, id, length, id, TrackEdge.Role.PLAIN);
                     pieceAttach.put(new PortRef(id, Port.A), new EdgeEnd(d, true));
                     pieceAttach.put(new PortRef(id, Port.B), new EdgeEnd(d, false));
                 }
@@ -456,12 +494,13 @@ public final class TrackGraph {
                     d.fromPort = Port.DIVERGING;
                     pieceAttach.put(new PortRef(id, Port.DIVERGING), new EdgeEnd(d, false));
                 }
-                case TrackPiece.CrossingPiece c -> {
+                case TrackPiece.CrossingPiece _ -> {
+                    TrackPiece.CrossingDimensions c = p.crossing();
                     nodes.put(id, new TrackNode.CrossingNode(id));
                     halfEdge(id, Port.A1, c.crossingFromA1Mm(), drafts, pieceAttach);
-                    halfEdge(id, Port.A2, c.lineA().lengthMm() - c.crossingFromA1Mm(), drafts, pieceAttach);
+                    halfEdge(id, Port.A2, c.lineALengthMm() - c.crossingFromA1Mm(), drafts, pieceAttach);
                     halfEdge(id, Port.B1, c.crossingFromB1Mm(), drafts, pieceAttach);
-                    halfEdge(id, Port.B2, c.lineB().lengthMm() - c.crossingFromB1Mm(), drafts, pieceAttach);
+                    halfEdge(id, Port.B2, c.lineBLengthMm() - c.crossingFromB1Mm(), drafts, pieceAttach);
                 }
                 case TrackPiece.DoubleSlipPiece dk -> {
                     String a = id + ".A";

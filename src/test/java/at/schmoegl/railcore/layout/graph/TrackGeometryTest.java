@@ -59,12 +59,12 @@ public class TrackGeometryTest {
     }
 
     public void testCrossingPointInsideLines() {
-        TrackPiece.CrossingPiece k = TrackPiece.CrossingPiece.symmetric("K",
-                TrackGeometry.straight(300), TrackGeometry.straight(240));
+        TrackPiece.CrossingDimensions k = TrackPiece.CrossingDimensions.symmetric(300, 240);
         assertNear(150, k.crossingFromA1Mm(), "Mitte A");
         assertNear(120, k.crossingFromB1Mm(), "Mitte B");
-        assertThrows(IllegalArgumentException.class, () -> new TrackPiece.CrossingPiece("K",
-                TrackGeometry.straight(300), TrackGeometry.straight(300), 300, 150));
+        assertThrows(IllegalArgumentException.class, () -> new TrackPiece.CrossingDimensions(300, 300, 300, 150));
+        assertThrows(IllegalArgumentException.class, () -> new TrackPiece.CrossingDimensions(0, 300, 10, 150));
+        assertThrows(IllegalArgumentException.class, () -> new TrackPiece.CrossingPiece("K", null));
     }
 
     public void testDoubleSlipLogicRejectsAmbiguity() {

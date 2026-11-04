@@ -8,8 +8,9 @@ import java.util.Map;
  * Physisches Gleisstück als Katalogeintrag (Entscheidung 40/E2, 41): Art, Maße und Anschlüsse. Aus den verlegten
  * Gleisstücken berechnet {@link TrackGraph.Builder} Knoten und Kanten.
  *
- * <p>Gerade Stücke, Bögen und Kreuzungen: Maße aus dem Katalogeintrag. Weichen und Doppelkreuzungsweichen: maßgeblich
- * sind die je verlegtem Stück eingetragenen Werte, der Typ liefert nur einen Vorschlag (Entscheidung 41).
+ * <p>Gerade Stücke und Bögen: Länge aus dem Katalogeintrag, beim Verlegen optional überschreibbar (Entscheidung 42).
+ * Weichen, Doppelkreuzungsweichen und Kreuzungen: maßgeblich sind die je verlegtem Stück eingetragenen Werte, der
+ * Typ liefert nur einen Vorschlag (Entscheidungen 41, 42).
  * Im Code stehen keine Herstellermaße.
  * Neue Arten (z. B. Dreiwegweiche, Drehscheibe) werden als weitere Variante ergänzt.
  */
@@ -24,7 +25,11 @@ public sealed interface TrackPiece
 
     static PlainPiece plain(String id, TrackGeometry geometry) { return new PlainPiece(id, geometry); }
 
-    /** Gerades Stück, gebogenes Stück oder Flexgleis: ein Strang von {@code A} nach {@code B}. */
+    /**
+     * Gerades Stück, gebogenes Stück oder Flexgleis: ein Strang von {@code A} nach {@code B}. Die Länge aus der
+     * Geometrie gilt, solange beim Verlegen keine eigene Länge angegeben ist
+     * ({@link TrackGraph.Builder#place(String, TrackPiece, double)}, Entscheidung 42).
+     */
     record PlainPiece(String id, TrackGeometry geometry) implements TrackPiece {
         public PlainPiece {
             requireId(id);
@@ -59,30 +64,41 @@ public sealed interface TrackPiece
     }
 
     /**
-     * Kreuzung: zwei Stränge A1–A2 und B1–B2, die sich in einem Punkt schneiden; kein Übergang zwischen den
-     * Strängen. Der Kreuzungspunkt liegt {@code crossingFromA1Mm} hinter A1 bzw. {@code crossingFromB1Mm} hinter B1.
+     * Kreuzungstyp: zwei Stränge A1–A2 und B1–B2, die sich in einem Punkt schneiden; kein Übergang zwischen den
+     * Strängen. Maßgeblich sind die je verlegter Kreuzung eingetragenen Maße
+     * ({@link TrackGraph.Builder#placeCrossing}, Entscheidung 42); der Typ liefert nur {@code suggestion}.
      */
-    record CrossingPiece(String id, TrackGeometry lineA, TrackGeometry lineB,
-                         double crossingFromA1Mm, double crossingFromB1Mm) implements TrackPiece {
+    record CrossingPiece(String id, CrossingDimensions suggestion) implements TrackPiece {
         public CrossingPiece {
             requireId(id);
-            if (lineA == null || lineB == null) throw new IllegalArgumentException("Kreuzung " + id + ": Geometrie fehlt");
-            requireInside(crossingFromA1Mm, lineA.lengthMm(), id, "A");
-            requireInside(crossingFromB1Mm, lineB.lengthMm(), id, "B");
-        }
-
-        /** Kreuzungspunkt jeweils in der Mitte der Stränge. */
-        public static CrossingPiece symmetric(String id, TrackGeometry lineA, TrackGeometry lineB) {
-            return new CrossingPiece(id, lineA, lineB, lineA.lengthMm() / 2, lineB.lengthMm() / 2);
-        }
-
-        private static void requireInside(double at, double length, String id, String line) {
-            if (!(at > 0) || !(at < length))
-                throw new IllegalArgumentException("Kreuzung " + id + ": Kreuzungspunkt auf Strang " + line
-                        + " muss zwischen 0 und " + length + " mm liegen: " + at);
+            if (suggestion == null) throw new IllegalArgumentException("Kreuzung " + id + ": Vorschlagswerte fehlen");
         }
 
         @Override public List<Port> ports() { return List.of(Port.A1, Port.A2, Port.B1, Port.B2); }
+    }
+
+    /**
+     * Maße einer Kreuzung in mm: Länge der Stränge A (A1–A2) und B (B1–B2), Lage des Kreuzungspunkts hinter A1 bzw. B1.
+     */
+    record CrossingDimensions(double lineALengthMm, double lineBLengthMm, double crossingFromA1Mm,
+                              double crossingFromB1Mm) {
+        public CrossingDimensions {
+            requirePositive(lineALengthMm, "Länge Strang A");
+            requirePositive(lineBLengthMm, "Länge Strang B");
+            requireInside(crossingFromA1Mm, lineALengthMm, "A");
+            requireInside(crossingFromB1Mm, lineBLengthMm, "B");
+        }
+
+        /** Kreuzungspunkt jeweils in der Mitte der Stränge. */
+        public static CrossingDimensions symmetric(double lineALengthMm, double lineBLengthMm) {
+            return new CrossingDimensions(lineALengthMm, lineBLengthMm, lineALengthMm / 2, lineBLengthMm / 2);
+        }
+
+        private static void requireInside(double at, double length, String line) {
+            if (!(at > 0) || !(at < length))
+                throw new IllegalArgumentException("Kreuzungspunkt auf Strang " + line + " muss zwischen 0 und "
+                        + length + " mm liegen: " + at);
+        }
     }
 
     /**
@@ -125,6 +141,11 @@ public sealed interface TrackPiece
             if (v == null) throw new IllegalArgumentException("Kein Fahrweg der Doppelkreuzungsweiche: " + route);
             return v;
         }
+    }
+
+    private static void requirePositive(double value, String what) {
+        if (!(value > 0) || !Double.isFinite(value))
+            throw new IllegalArgumentException(what + " muss eine endliche Zahl größer 0 sein: " + value);
     }
 
     private static void requireId(String id) {

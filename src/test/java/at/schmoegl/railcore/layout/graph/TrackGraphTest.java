@@ -197,9 +197,14 @@ public class TrackGraphTest {
 
     // --- Kreuzung -----------------------------------------------------------------------------------------------
 
-    static TrackGraph crossing() {
-        TrackPiece k = TrackPiece.CrossingPiece.symmetric("TEST-K", TrackGeometry.straight(300), TrackGeometry.straight(300));
-        TrackGraph.Builder b = TrackGraph.builder().place("k", k);
+    /** Kreuzungstyp mit Vorschlagswerten; maßgeblich sind die Maße je verlegter Kreuzung (Entscheidung 42). */
+    static final TrackPiece.CrossingPiece K = new TrackPiece.CrossingPiece("TEST-K",
+            TrackPiece.CrossingDimensions.symmetric(300, 300));
+
+    static TrackGraph crossing() { return crossing(K.suggestion()); }
+
+    static TrackGraph crossing(TrackPiece.CrossingDimensions dimensions) {
+        TrackGraph.Builder b = TrackGraph.builder().placeCrossing("k", K, dimensions);
         for (Port p : List.of(Port.A1, Port.A2, Port.B1, Port.B2)) {
             String id = "x" + p;
             b.place(id, G1000).connect("k", p, id, Port.A).bufferStop(id, Port.B);
@@ -416,9 +421,36 @@ public class TrackGraphTest {
         assertEquals(List.of(), g.notices());
     }
 
+    public void testCrossingInstanceDimensionsOverrideType() {
+        TrackGraph g = crossing(new TrackPiece.CrossingDimensions(310, 290, 120, 145));
+        assertNear(120, g.edge("k.A1").lengthMm(), "A1 bis Kreuzungspunkt");
+        assertNear(190, g.edge("k.A2").lengthMm(), "Kreuzungspunkt bis A2");
+        assertNear(145, g.edge("k.B1").lengthMm(), "B1 bis Kreuzungspunkt");
+        assertNear(145, g.edge("k.B2").lengthMm(), "Kreuzungspunkt bis B2");
+        assertNear(4000 + 310 + 290, g.totalLengthMm(), "Summe");
+        expectGraphError(() -> TrackGraph.builder().place("k", K).build());
+        expectGraphError(() -> TrackGraph.builder().placeCrossing("k", K, null).build());
+    }
+
+    public void testPlainPieceOptionalInstanceLength() {
+        // Bogen-Typ 500 mm / 45° (392,7 mm); verlegt mit gemessener Länge 388 mm, Gerade gekürzt auf 870 mm.
+        TrackGraph g = TrackGraph.builder()
+                .place("a", G1000, 870).place("c", R500, 388).place("b", G1000)
+                .bufferStop("a", Port.A).connect("a", Port.B, "c", Port.A).connect("c", Port.B, "b", Port.A)
+                .bufferStop("b", Port.B).build();
+        assertNear(870, g.edge("a").lengthMm(), "Gerade mit eigener Länge");
+        assertNear(388, g.edge("c").lengthMm(), "Bogen mit eigener Länge");
+        assertNear(1000, g.edge("b").lengthMm(), "ohne eigene Länge gilt der Typ");
+        assertNear(870 + 388 + 1000, g.follow(g.edge("a").forward(), 0, 99_999, TurnoutStates.allUnknown())
+                .path().lengthMm(), "Fahrweg");
+        expectGraphError(() -> TrackGraph.builder().place("a", G1000, 0).bufferStop("a", Port.A).bufferStop("a", Port.B).build());
+        expectGraphError(() -> TrackGraph.builder().place("a", G1000, Double.NaN).build());
+        expectGraphError(() -> TrackGraph.builder().place("k", K, 300).build());
+    }
+
     public void testTurnoutWithoutInstanceValuesIsRejected() {
         TrackGraphException e = expectGraphError(() -> TrackGraph.builder().place("w", W).build());
-        assertTrue(e.problems().getFirst().contains("Entscheidung 41"), e.problems().toString());
+        assertTrue(e.problems().getFirst().contains("eigene Maße"), e.problems().toString());
         expectGraphError(() -> TrackGraph.builder().placeTurnout("w", W, "w", null).build());
     }
 
