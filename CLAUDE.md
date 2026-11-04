@@ -4,8 +4,9 @@ RailCore ist eine eigene Modellbahn-Steuerung (Java 25, Desktop) für eine Roco 
 Ziel: bis zu 100 Züge vollautomatisch, wegbasiert und sicher fahren, mit Handbetrieb unter Zugbeeinflussung.
 
 Maßgebliche Unterlagen:
-- Technisches Lastenheft: „RailCore – Technisches Lastenheft“ (claude.ai: https://claude.ai/artifact/EZJSUZJ3T2DzCGpGTZfaDM)
-- `docs/lastenheft/` – Lastenheft als Kapitel-Dateien; nur das für die Aufgabe nötige Kapitel lesen (Inhaltsverzeichnis in README.md). Maßgeblich bleibt das Dokument in claude.ai.
+- `docs/lastenheft/` – **maßgebliche Fassung** des technischen Lastenhefts als Kapitel-Dateien; nur das für die Aufgabe nötige Kapitel lesen (Inhaltsverzeichnis in README.md).
+- Lesbare Fassung mit Diagrammen: Dokument „RailCore – Technisches Lastenheft“ in claude.ai (https://claude.ai/artifact/EZJSUZJ3T2DzCGpGTZfaDM).
+- Jede Änderung am Lastenheft zuerst in docs/lastenheft/, danach im claude.ai-Dokument nachziehen (Entscheidung 25).
 - `docs/ENTSCHEIDUNGEN.md` – Entscheidungsprotokoll. Vor jeder Architekturänderung lesen; neue Entscheidungen oben eintragen.
 - `docs/FEATURES.md` – Anforderungsübersicht
 
@@ -70,6 +71,13 @@ Logo: `docs/bilder/railcore-logo.png`. Programmsymbol: `docs/bilder/railcore-ico
 - Routine (Tests, Doku, Umbenennungen, Build-Konfiguration) an **railcore-routine** (Sonnet) übergeben.
 - Ist eine ganze Sitzung überwiegend Kernlogik, dem Nutzer zu Beginn empfehlen, die Sitzung auf Opus umzustellen.
 - Für Kernaufgaben mit Hardwarezugriff die Hauptsitzung auf Opus umstellen statt railcore-kern zu verwenden. Agenten nur für Aufgaben, bei denen das Ergebnis zählt (Tests, Doku, Aufräumen, reine Simulator-Logik).
+
+## Entscheidungen
+
+- **Grundsätzliche Entscheidungen trifft immer der Nutzer:** Architektur, Sicherheit, Hardwarezugriff, neue Bibliotheken, Datenformate und jede Abweichung von CLAUDE.md oder Lastenheft. Vorher 2–3 Optionen mit Empfehlung vorlegen und erst nach Zustimmung umsetzen.
+- Umsetzungsdetails innerhalb der Regeln entscheidet Claude Code selbst und begründet sie in der Commit-Nachricht.
+- Im Zweifel fragen.
+- In `docs/ENTSCHEIDUNGEN.md` nur Einträge mit Freigabe des Nutzers (Spalte „Freigegeben“); Einträge ohne belegte Freigabe stehen auf „offen – bitte bestätigen“.
 
 ## Commits
 

@@ -1,6 +1,6 @@
 # 4. Gleisplan-Modell
 
-> Quelle: Dokument „RailCore – Technisches Lastenheft“ in claude.ai (https://claude.ai/artifact/EZJSUZJ3T2DzCGpGTZfaDM), Stand 03.11.2026. Maßgeblich ist das Dokument in claude.ai; Änderungen dort planen und hier nachziehen.
+> Maßgebliche Fassung des Lastenhefts. Lesbare Fassung mit Diagrammen: Dokument „RailCore – Technisches Lastenheft“ in claude.ai (https://claude.ai/artifact/EZJSUZJ3T2DzCGpGTZfaDM), wird nach jeder Änderung hier nachgezogen.
 
 Physik und Logik werden getrennt: Ein **Meldeabschnitt** ist ein Kabel am Melder, ein **Block** ist eine Betriebseinheit. Ein Block kann mehrere Abschnitte haben, ein Abschnitt kann eine Weiche abdecken.
 

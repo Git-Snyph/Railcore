@@ -1,6 +1,6 @@
 # 6. Positionsberechnung und Einmessen
 
-> Quelle: Dokument „RailCore – Technisches Lastenheft“ in claude.ai (https://claude.ai/artifact/EZJSUZJ3T2DzCGpGTZfaDM), Stand 03.11.2026. Maßgeblich ist das Dokument in claude.ai; Änderungen dort planen und hier nachziehen.
+> Maßgebliche Fassung des Lastenhefts. Lesbare Fassung mit Diagrammen: Dokument „RailCore – Technisches Lastenheft“ in claude.ai (https://claude.ai/artifact/EZJSUZJ3T2DzCGpGTZfaDM), wird nach jeder Änderung hier nachgezogen.
 
 Jede Zugposition ist ein Punkt im Gleisgraph (Kante + mm) für die Zugspitze, dazu Richtung und Länge; daraus folgen alle belegten Abschnitte. Gerechnet wird 20× pro Sekunde aus Fahrstufe, Profil und Zeit.
 
@@ -44,7 +44,7 @@ Eingemessen wird das Grundverhalten der Lok (Geschwindigkeit je Fahrstufe, Reakt
 
 - Spricht ein Meldeabschnitt an, wird die Zugspitze auf seinen Meldepunkt gesetzt, zuzüglich der seit dem Ereignis gefahrenen Strecke und der Melderverzögerung.
 - RailCom bestätigt, welcher Zug den Abschnitt belegt (Adresse, Zeitstempel, Aufgleisrichtung der Lok – die RailCom-Richtungsbits zeigen nicht die Fahrtrichtung). Eine RailCom-Adresse gilt nur, solange der Abschnitt belegt gemeldet ist; der 10808 meldet das Verlassen nicht immer mit einer leeren Adresse.
-- Die **Positionsunsicherheit** wächst mit der Strecke seit dem letzten Abgleich (Startwert 2 % der Strecke + 20 mm, wird aus der Statistik je Zug gelernt). Sie geht in Bremspunkt und Reservierung ein.
+- Die **Positionsunsicherheit** wächst mit der Strecke seit dem letzten Abgleich (Startwert 1 % der Strecke + 3 mm – 3 mm Messstreuung des Melders, 1 % Abweichung im Fahrprofil; wird aus der Statistik je Zug gelernt, die Startwerte gelten nur bis zu echten Messungen). Sie geht in Bremspunkt und Reservierung ein.
 - Abweichung beim Abgleich größer als erwartet → Schlupf oder falsches Profil: Warnung, Zug verlangsamt; sehr groß → Halt, „Position unsicher“.
 
 **Bremskurve:** Aus Ziel (Haltepunkt, Ende der Freigabe, Langsamfahrstelle), Unsicherheit und Bremsprofil folgt laufend die höchste zulässige Geschwindigkeit an der aktuellen Stelle. Unterschreitet der Abstand den Bremsweg, wird gebremst; der Zug hält am Haltepunkt, ohne eigenen Brems- oder Haltemelder.

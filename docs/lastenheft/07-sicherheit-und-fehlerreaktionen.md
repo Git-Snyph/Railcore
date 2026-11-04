@@ -1,6 +1,6 @@
 # 7. Sicherheit und Fehlerreaktionen
 
-> Quelle: Dokument „RailCore – Technisches Lastenheft“ in claude.ai (https://claude.ai/artifact/EZJSUZJ3T2DzCGpGTZfaDM), Stand 03.11.2026. Maßgeblich ist das Dokument in claude.ai; Änderungen dort planen und hier nachziehen.
+> Maßgebliche Fassung des Lastenhefts. Lesbare Fassung mit Diagrammen: Dokument „RailCore – Technisches Lastenheft“ in claude.ai (https://claude.ai/artifact/EZJSUZJ3T2DzCGpGTZfaDM), wird nach jeder Änderung hier nachgezogen.
 
 Der Sicherheitsmanager prüft jeden Befehl vor dem Senden und überwacht laufend die Plausibilität. Jede Störung hat eine festgelegte Erkennung und Reaktion.
 
