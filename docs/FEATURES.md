@@ -43,6 +43,7 @@ Stand: 03.11.2026. Eigene Modellbahn-Steuerung (Java 25), Repository Git-Snyph/R
 - [ ] Live-Gleisbild mit Zügen in echter Länge
 - [ ] Vollautomatik: Anlage starten, alle Züge fahren selbstständig; Geisterzug-Erkennung → Nothalt
 - [ ] Handbetrieb im Automatikbetrieb (z. B. Z21 WLAN-Maus) mit Zugbeeinflussung: Bremskurve bis rotem Signal/Ende der Freigabe, Geschwindigkeitsüberwachung, Reservierung vor dem Handzug
+- [ ] Z21 WLAN-Maus direkt an RailCore: Z21-kompatibler LAN-Server, Maus-Befehle nur nach Prüfung an die Zentrale (Entscheidung 21)
 - [ ] Schattenbahnhof mit Nachrücken (z. B. 3 Blöcke je Gleis)
 - [ ] Drehscheibe
 - [ ] Fahrpläne mit Modellzeit
