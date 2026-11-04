@@ -5,10 +5,12 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Physisches Gleisstück als Katalogeintrag (Entscheidung 40/E2): Art, Geometrie und Anschlüsse. Aus den verlegten
+ * Physisches Gleisstück als Katalogeintrag (Entscheidung 40/E2, 41): Art, Maße und Anschlüsse. Aus den verlegten
  * Gleisstücken berechnet {@link TrackGraph.Builder} Knoten und Kanten.
  *
- * <p>Maße kommen immer aus dem Katalog bzw. der Konfiguration; im Code stehen keine Herstellermaße.
+ * <p>Gerade Stücke, Bögen und Kreuzungen: Maße aus dem Katalogeintrag. Weichen und Doppelkreuzungsweichen: maßgeblich
+ * sind die je verlegtem Stück eingetragenen Werte, der Typ liefert nur einen Vorschlag (Entscheidung 41).
+ * Im Code stehen keine Herstellermaße.
  * Neue Arten (z. B. Dreiwegweiche, Drehscheibe) werden als weitere Variante ergänzt.
  */
 public sealed interface TrackPiece
@@ -38,26 +40,19 @@ public sealed interface TrackPiece
     enum Hand { LEFT, RIGHT, SYMMETRIC }
 
     /**
-     * Einfache Weiche: Spitze {@code TIP}, gerader Strang {@code STRAIGHT}, Abzweig {@code DIVERGING}, jeder Strang
-     * mit eigener Geometrie (Länge ab Spitze). Grenzzeichen je Schenkel in mm ab Spitze sind Pflichtangaben.
+     * Weichentyp: Spitze {@code TIP}, gerader Strang {@code STRAIGHT}, Abzweig {@code DIVERGING}.
      * Bei einer Y-Weiche ist „gerade“ der Strang, den die Lage {@code STRAIGHT} einstellt.
+     *
+     * <p>Maßgeblich sind die Zweiglängen und Grenzzeichen der <b>verlegten</b> Weiche, die der Nutzer je Weiche
+     * einträgt ({@link TrackGraph.Builder#placeTurnout}, Entscheidung 41). Der Typ liefert nur einen
+     * {@code suggestion}-Vorschlag, den ein Editor beim Anlegen übernehmen kann; der Graph liest ihn nie selbst.
+     * Weichenlängen werden bewusst nicht aus Radius und Winkel berechnet, weil reale Weichen davon abweichen.
      */
-    record TurnoutPiece(String id, Hand hand, TrackGeometry straight, TrackGeometry diverging,
-                        double straightClearanceMm, double divergingClearanceMm) implements TrackPiece {
+    record TurnoutPiece(String id, Hand hand, TurnoutBranches suggestion) implements TrackPiece {
         public TurnoutPiece {
             requireId(id);
-            if (hand == null || straight == null || diverging == null)
-                throw new IllegalArgumentException("Weiche " + id + ": Bauform oder Geometrie fehlt");
-            branches(straight, diverging, straightClearanceMm, divergingClearanceMm);
-        }
-
-        /** Aus der Geometrie berechnete Zweiglängen mit den Grenzzeichen. */
-        public TurnoutBranches branches() {
-            return branches(straight, diverging, straightClearanceMm, divergingClearanceMm);
-        }
-
-        private static TurnoutBranches branches(TrackGeometry s, TrackGeometry d, double cs, double cd) {
-            return new TurnoutBranches(s.lengthMm(), d.lengthMm(), cs, cd);
+            if (hand == null || suggestion == null)
+                throw new IllegalArgumentException("Weiche " + id + ": Bauform oder Vorschlagswerte fehlen");
         }
 
         @Override public List<Port> ports() { return List.of(Port.TIP, Port.STRAIGHT, Port.DIVERGING); }
@@ -91,31 +86,45 @@ public sealed interface TrackPiece
     }
 
     /**
-     * Doppelkreuzungsweiche: Außenanschlüsse A1, A2 (Seite A) und B1, B2 (Seite B), vier Fahrwege mit eigener
-     * Geometrie, gestellt über zwei gekoppelte Weichenhälften (Seite A, Seite B) nach {@link DoubleSlipLogic}.
-     * Grenzzeichen sind hier noch nicht erfasst (offen für B2).
+     * Typ einer Doppelkreuzungsweiche: Außenanschlüsse A1, A2 (Seite A) und B1, B2 (Seite B), vier Fahrwege, gestellt
+     * über zwei gekoppelte Weichenhälften (Seite A, Seite B) nach {@link DoubleSlipLogic} der Bauart.
+     *
+     * <p>Wie bei der einfachen Weiche sind die Fahrweglängen der <b>verlegten</b> DKW maßgeblich
+     * ({@link TrackGraph.Builder#placeDoubleSlip}, Entscheidung 41); der Typ liefert nur {@code suggestion}.
+     * Grenzzeichen der DKW sind noch nicht erfasst (offen für B2).
      */
-    record DoubleSlipPiece(String id, Map<Port, TrackGeometry> routes, DoubleSlipLogic logic) implements TrackPiece {
+    record DoubleSlipPiece(String id, DoubleSlipLengths suggestion, DoubleSlipLogic logic) implements TrackPiece {
         public DoubleSlipPiece {
             requireId(id);
-            if (logic == null) throw new IllegalArgumentException("Doppelkreuzungsweiche " + id + ": Stelllogik fehlt");
-            Map<Port, TrackGeometry> copy = new EnumMap<>(Port.class);
-            copy.putAll(routes);
-            for (Port r : copy.keySet())
-                if (!r.isDoubleSlipRoute())
-                    throw new IllegalArgumentException("Doppelkreuzungsweiche " + id + ": kein Fahrweg " + r);
-            if (copy.size() != 4)
-                throw new IllegalArgumentException("Doppelkreuzungsweiche " + id + ": alle vier Fahrwege brauchen eine Geometrie");
-            routes = Map.copyOf(copy);
-        }
-
-        public double lengthMm(Port route) {
-            TrackGeometry g = routes.get(route);
-            if (g == null) throw new IllegalArgumentException("Kein Fahrweg der Doppelkreuzungsweiche: " + route);
-            return g.lengthMm();
+            if (logic == null || suggestion == null)
+                throw new IllegalArgumentException("Doppelkreuzungsweiche " + id + ": Stelllogik oder Vorschlagswerte fehlen");
         }
 
         @Override public List<Port> ports() { return List.of(Port.A1, Port.A2, Port.B1, Port.B2); }
+    }
+
+    /** Längen der vier Fahrwege einer Doppelkreuzungsweiche in mm (Schlüssel {@code A1_B1} … {@code A2_B2}). */
+    record DoubleSlipLengths(Map<Port, Double> lengthsMm) {
+        public DoubleSlipLengths {
+            Map<Port, Double> copy = new EnumMap<>(Port.class);
+            copy.putAll(lengthsMm);
+            for (Map.Entry<Port, Double> e : copy.entrySet()) {
+                if (!e.getKey().isDoubleSlipRoute())
+                    throw new IllegalArgumentException("Kein Fahrweg der Doppelkreuzungsweiche: " + e.getKey());
+                Double v = e.getValue();
+                if (v == null || !(v > 0) || !Double.isFinite(v))
+                    throw new IllegalArgumentException("Länge des Fahrwegs " + e.getKey() + " muss größer 0 sein: " + v);
+            }
+            if (copy.size() != 4)
+                throw new IllegalArgumentException("Alle vier Fahrwege der Doppelkreuzungsweiche brauchen eine Länge");
+            lengthsMm = Map.copyOf(copy);
+        }
+
+        public double lengthMm(Port route) {
+            Double v = lengthsMm.get(route);
+            if (v == null) throw new IllegalArgumentException("Kein Fahrweg der Doppelkreuzungsweiche: " + route);
+            return v;
+        }
     }
 
     private static void requireId(String id) {

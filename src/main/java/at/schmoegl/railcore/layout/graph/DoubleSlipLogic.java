@@ -13,8 +13,12 @@ import java.util.Map;
  *
  * <p>Je Außenanschluss müssen seine beiden Fahrwege verschiedene Lagen verlangen, sonst wäre die Fortsetzung
  * mehrdeutig. Eine Lagekombination ohne Fahrweg bedeutet „kein Durchkommen“ (im Zweifel halt).
+ *
+ * <p>{@code hardwareVerified} sagt, ob die Zuordnung für diese Bauart an der echten Hardware geprüft wurde
+ * (Entscheidung 41). Ungeprüfte Zuordnungen meldet {@link TrackGraph#notices()} als Hinweis; sie gelten nicht als
+ * gesichert.
  */
-public record DoubleSlipLogic(Map<Port, Setting> settings) {
+public record DoubleSlipLogic(Map<Port, Setting> settings, boolean hardwareVerified) {
 
     /** Verlangte Lage beider Hälften für einen Fahrweg. */
     public record Setting(TurnoutPosition sideA, TurnoutPosition sideB) {
@@ -41,15 +45,17 @@ public record DoubleSlipLogic(Map<Port, Setting> settings) {
     }
 
     /**
-     * Annahme (an der jeweiligen Bauart zu prüfen): durchgehende Stränge A1–B1 und A2–B2 bei beiden Hälften
-     * „gerade“, Bogenfahrwege A1–B2 und A2–B1 bei beiden Hälften „abzweigend“; gemischte Lagen geben keinen
-     * Fahrweg frei.
+     * VORLÄUFIGE ANNAHME – AN HARDWARE ZU PRÜFEN (Entscheidung 41), deshalb {@code hardwareVerified = false}:
+     * durchgehende Stränge A1–B1 und A2–B2 bei beiden Hälften „gerade“, Bogenfahrwege A1–B2 und A2–B1 bei beiden
+     * Hälften „abzweigend“; gemischte Lagen geben keinen Fahrweg frei. Ob eine reale Bauart so schaltet, ist nicht
+     * belegt; die Zuordnung je Bauart wird an der Hardware geprüft und dann mit {@code hardwareVerified = true}
+     * eingetragen.
      */
-    public static DoubleSlipLogic assumedStandard() {
+    public static DoubleSlipLogic provisionalAssumption() {
         Setting straight = new Setting(TurnoutPosition.STRAIGHT, TurnoutPosition.STRAIGHT);
         Setting diverging = new Setting(TurnoutPosition.DIVERGING, TurnoutPosition.DIVERGING);
         return new DoubleSlipLogic(Map.of(Port.A1_B1, straight, Port.A2_B2, straight,
-                Port.A1_B2, diverging, Port.A2_B1, diverging));
+                Port.A1_B2, diverging, Port.A2_B1, diverging), false);
     }
 
     public Setting setting(Port route) {

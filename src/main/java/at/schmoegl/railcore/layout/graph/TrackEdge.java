@@ -22,7 +22,7 @@ public record TrackEdge(String id, String fromNode, Port fromPort, String toNode
         CROSSING_HALF,
         /** Fahrweg einer Doppelkreuzungsweiche (Seite A → Seite B) */
         DOUBLE_SLIP_ROUTE,
-        /** Verbindung ohne Länge zwischen zwei Knoten, die unmittelbar aneinanderstoßen */
+        /** Verbindung ohne Länge zwischen zwei Knoten, die unmittelbar aneinanderstoßen; vorläufig, später überarbeitbar (Entscheidung 41) */
         CONNECTOR
     }
 

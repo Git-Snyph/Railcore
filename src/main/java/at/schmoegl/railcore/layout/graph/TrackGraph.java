@@ -46,6 +46,7 @@ public final class TrackGraph {
     private final Map<String, TrackEdge> edges;
     private final Map<NodePort, Attachment> attachments;
     private final Map<ClearanceKey, List<TrackLocation>> clearances;
+    private final List<String> notices;
 
     private TrackGraph(Map<String, TrackNode> nodes, Map<String, TrackEdge> edges, Map<NodePort, Attachment> attachments,
                        Map<ClearanceKey, List<TrackLocation>> clearances) {
@@ -53,9 +54,21 @@ public final class TrackGraph {
         this.edges = Collections.unmodifiableMap(new LinkedHashMap<>(edges));
         this.attachments = Map.copyOf(attachments);
         this.clearances = Map.copyOf(clearances);
+        List<String> n = new ArrayList<>();
+        for (TrackNode node : this.nodes.values())
+            if (node instanceof TrackNode.DoubleSlipNode d && d.sideA() && !d.logic().hardwareVerified())
+                n.add("Doppelkreuzungsweiche " + d.id() + ": Stelllogik nicht an Hardware geprüft (vorläufige Annahme,"
+                        + " Entscheidung 41)");
+        this.notices = List.copyOf(n);
     }
 
     public static Builder builder() { return new Builder(); }
+
+    /**
+     * Hinweise zum Graph, die den Bau nicht verhindern, aber nicht als gesichert gelten (Grundlage für den
+     * Prüfbericht ab B3), z. B. Doppelkreuzungsweichen mit ungeprüfter Stelllogik.
+     */
+    public List<String> notices() { return notices; }
 
     public Collection<TrackNode> nodes() { return nodes.values(); }
 
@@ -217,7 +230,8 @@ public final class TrackGraph {
 
         private static final Pattern INSTANCE_ID = Pattern.compile("[^.:~\\s]+");
 
-        private record Placement(String instanceId, TrackPiece piece, List<String> turnoutIds) {}
+        private record Placement(String instanceId, TrackPiece piece, List<String> turnoutIds, TurnoutBranches branches,
+                                 TrackPiece.DoubleSlipLengths routeLengths) {}
 
         private record PortRef(String instanceId, Port port) {
             @Override public String toString() { return instanceId + "." + port; }
@@ -232,27 +246,50 @@ public final class TrackGraph {
 
         private Builder() {}
 
-        /** Verlegt ein Stück; eine Weiche heißt logisch wie das Stück, die Hälften einer DKW {@code id.A}/{@code id.B}. */
+        /**
+         * Verlegt ein einfaches Stück (gerade, Bogen, Flexgleis) oder eine Kreuzung. Weichen und
+         * Doppelkreuzungsweichen brauchen eigene Maße je verlegtem Stück und werden mit {@link #placeTurnout} bzw.
+         * {@link #placeDoubleSlip} verlegt; hier sind sie ein Fehler, damit nie stillschweigend der Typ-Vorschlag gilt.
+         */
         public Builder place(String instanceId, TrackPiece piece) {
-            List<String> ids = switch (piece) {
-                case TrackPiece.TurnoutPiece _ -> List.of(instanceId);
-                case TrackPiece.DoubleSlipPiece _ -> List.of(instanceId + ".A", instanceId + ".B");
-                default -> List.of();
-            };
-            return add(instanceId, piece, ids);
+            if (piece instanceof TrackPiece.TurnoutPiece || piece instanceof TrackPiece.DoubleSlipPiece) {
+                problems.add("Stück " + instanceId + ": Weiche braucht eigene Längen und Grenzzeichen je verlegter Weiche"
+                        + " (Entscheidung 41) – mit placeTurnout bzw. placeDoubleSlip verlegen");
+                return this;
+            }
+            return add(instanceId, piece, List.of(), null, null);
         }
 
-        /** Verlegt eine Weiche mit eigener logischer Weichenkennung (Zubehör). */
-        public Builder placeTurnout(String instanceId, TrackPiece.TurnoutPiece piece, String turnoutId) {
-            return add(instanceId, piece, List.of(turnoutId));
+        /**
+         * Verlegt eine Weiche. {@code branches} (Zweiglängen und Grenzzeichen dieser Weiche) sind maßgeblich
+         * (Entscheidung 41); der Vorschlag des Typs ({@link TrackPiece.TurnoutPiece#suggestion()}) wird nicht gelesen.
+         *
+         * @param turnoutId logische Weiche (Zubehör), deren Lage diese Weiche stellt
+         */
+        public Builder placeTurnout(String instanceId, TrackPiece.TurnoutPiece piece, String turnoutId,
+                                    TurnoutBranches branches) {
+            if (branches == null) {
+                problems.add("Weiche " + instanceId + ": Zweiglängen und Grenzzeichen fehlen");
+                return this;
+            }
+            return add(instanceId, piece, List.of(turnoutId), branches, null);
         }
 
-        /** Verlegt eine Doppelkreuzungsweiche mit den logischen Kennungen beider Hälften. */
-        public Builder placeDoubleSlip(String instanceId, TrackPiece.DoubleSlipPiece piece, String turnoutIdA, String turnoutIdB) {
-            return add(instanceId, piece, List.of(turnoutIdA, turnoutIdB));
+        /**
+         * Verlegt eine Doppelkreuzungsweiche mit den Fahrweglängen dieser DKW (maßgeblich, Entscheidung 41) und den
+         * logischen Kennungen beider Hälften.
+         */
+        public Builder placeDoubleSlip(String instanceId, TrackPiece.DoubleSlipPiece piece, String turnoutIdA,
+                                       String turnoutIdB, TrackPiece.DoubleSlipLengths routeLengths) {
+            if (routeLengths == null) {
+                problems.add("Doppelkreuzungsweiche " + instanceId + ": Fahrweglängen fehlen");
+                return this;
+            }
+            return add(instanceId, piece, List.of(turnoutIdA, turnoutIdB), null, routeLengths);
         }
 
-        private Builder add(String instanceId, TrackPiece piece, List<String> turnoutIds) {
+        private Builder add(String instanceId, TrackPiece piece, List<String> turnoutIds, TurnoutBranches branches,
+                            TrackPiece.DoubleSlipLengths routeLengths) {
             if (instanceId == null || !INSTANCE_ID.matcher(instanceId).matches()) {
                 problems.add("Ungültige Stückkennung: '" + instanceId + "'");
                 return this;
@@ -266,7 +303,7 @@ public final class TrackGraph {
                     problems.add("Stück " + instanceId + ": Weichenkennung fehlt");
                     return this;
                 }
-            if (placements.putIfAbsent(instanceId, new Placement(instanceId, piece, turnoutIds)) != null)
+            if (placements.putIfAbsent(instanceId, new Placement(instanceId, piece, turnoutIds, branches, routeLengths)) != null)
                 problems.add("Stückkennung doppelt: " + instanceId);
             return this;
         }
@@ -406,8 +443,8 @@ public final class TrackGraph {
                     pieceAttach.put(new PortRef(id, Port.A), new EdgeEnd(d, true));
                     pieceAttach.put(new PortRef(id, Port.B), new EdgeEnd(d, false));
                 }
-                case TrackPiece.TurnoutPiece t -> {
-                    TurnoutBranches br = t.branches();
+                case TrackPiece.TurnoutPiece _ -> {
+                    TurnoutBranches br = p.branches();
                     nodes.put(id, new TrackNode.TurnoutNode(id, p.turnoutIds().getFirst(), br));
                     pieceAttach.put(new PortRef(id, Port.TIP), new NodeAttach(id, Port.TIP));
                     EdgeDraft s = draft(drafts, id + ".STRAIGHT", br.straightLengthMm(), id, TrackEdge.Role.TURNOUT_STRAIGHT);
@@ -434,7 +471,7 @@ public final class TrackGraph {
                     nodes.put(a, new TrackNode.DoubleSlipNode(a, true, tA, tB, dk.logic()));
                     nodes.put(b, new TrackNode.DoubleSlipNode(b, false, tA, tB, dk.logic()));
                     for (Port r : List.of(Port.A1_B1, Port.A1_B2, Port.A2_B1, Port.A2_B2)) {
-                        EdgeDraft d = draft(drafts, id + "." + r, dk.lengthMm(r), id, TrackEdge.Role.DOUBLE_SLIP_ROUTE);
+                        EdgeDraft d = draft(drafts, id + "." + r, p.routeLengths().lengthMm(r), id, TrackEdge.Role.DOUBLE_SLIP_ROUTE);
                         d.fromNode = a;
                         d.fromPort = r;
                         d.toNode = b;
@@ -486,6 +523,9 @@ public final class TrackGraph {
          * Verbindet zwei Anschlüsse. Kantenende an Kantenende: Stoß-/Trennstellen-Knoten. Kantenende an Knoten
          * (z. B. Weichenspitze): direkt, bei Trennstelle über einen Trennstellen-Knoten und eine Verbindungskante
          * ohne Länge. Knoten an Knoten: Verbindungskante ohne Länge (bei Trennstelle zwei mit Knoten dazwischen).
+         *
+         * <p>Die Verbindungskanten ohne Länge sind eine vorläufige Modellierung (Entscheidung 41, Punkt 3) und
+         * dürfen später überarbeitet werden; Code außerhalb dieses Pakets soll sich nicht auf sie verlassen.
          */
         private static void join(Attach a, Attach b, boolean isolating, String name, Map<String, TrackNode> nodes,
                                  Map<String, EdgeDraft> drafts) {

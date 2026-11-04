@@ -22,10 +22,11 @@ public class TrackGraphTest {
 
     static final TrackPiece G1000 = TrackPiece.plain("TEST-G1000", TrackGeometry.straight(1000));
     static final TrackPiece R500 = TrackPiece.plain("TEST-R500-45", TrackGeometry.arc(500, 45));
+    static final double W_DIV = 204.7;
+    /** Weichentyp mit Vorschlagswerten; maßgeblich sind die Werte je verlegter Weiche (Entscheidung 41). */
     static final TrackPiece.TurnoutPiece W = new TrackPiece.TurnoutPiece("TEST-W", TrackPiece.Hand.LEFT,
-            TrackGeometry.straight(200), TrackGeometry.compound(TrackGeometry.arc(400, 15), TrackGeometry.straight(100)),
-            150, 250);
-    static final double W_DIV = 400 * Math.PI / 12 + 100;
+            new TurnoutBranches(200, W_DIV, 150, 250));
+    static final TurnoutBranches W_BR = W.suggestion();
     static final double R500_LEN = 500 * Math.PI / 4;
 
     private static void assertTrue(boolean b, String what) {
@@ -49,9 +50,9 @@ public class TrackGraphTest {
     }
 
     /** Prellbock – g0 – Weiche w; gerader Strang → gs – Prellbock; Abzweig → gd – Prellbock. */
-    static TrackGraph turnoutYard(TrackPiece.TurnoutPiece piece) {
+    static TrackGraph turnoutYard(TurnoutBranches branches) {
         return TrackGraph.builder()
-                .place("g0", G1000).place("w", piece).place("gs", G1000).place("gd", G1000)
+                .place("g0", G1000).placeTurnout("w", W, "w", branches).place("gs", G1000).place("gd", G1000)
                 .bufferStop("g0", Port.A).connect("g0", Port.B, "w", Port.TIP)
                 .connect("w", Port.STRAIGHT, "gs", Port.A).bufferStop("gs", Port.B)
                 .connect("w", Port.DIVERGING, "gd", Port.A).bufferStop("gd", Port.B)
@@ -61,7 +62,7 @@ public class TrackGraphTest {
     /** Kehrschleife: Prellbock – g0 – w; gerader Strang → l1, Bogen c1–c4, l2 → zurück an den Abzweig von w. */
     static TrackGraph reversingLoop() {
         TrackGraph.Builder b = TrackGraph.builder()
-                .place("g0", G1000).place("w", W).place("l1", G1000).place("l2", G1000)
+                .place("g0", G1000).placeTurnout("w", W, "w", W_BR).place("l1", G1000).place("l2", G1000)
                 .bufferStop("g0", Port.A).connect("g0", Port.B, "w", Port.TIP)
                 .connect("w", Port.STRAIGHT, "l1", Port.A);
         String prev = "l1";
@@ -105,7 +106,7 @@ public class TrackGraphTest {
     // --- Weiche -------------------------------------------------------------------------------------------------
 
     public void testTurnoutNodeCarriesBranchLengths() {
-        TrackGraph g = turnoutYard(W);
+        TrackGraph g = turnoutYard(W_BR);
         TrackNode.TurnoutNode w = (TrackNode.TurnoutNode) g.node("w");
         assertEquals(NodeKind.TURNOUT, w.kind());
         assertEquals("w", w.turnoutId());
@@ -118,7 +119,7 @@ public class TrackGraphTest {
     }
 
     public void testTurnoutFacingDependsOnPosition() {
-        TrackGraph g = turnoutYard(W);
+        TrackGraph g = turnoutYard(W_BR);
         DirectedEdge in = g.edge("g0").forward();
         assertEquals(new Continuation.Next(g.edge("w.STRAIGHT").forward(),
                 List.of(new TurnoutRequirement("w", TurnoutPosition.STRAIGHT))), g.next(in, STRAIGHT));
@@ -128,7 +129,7 @@ public class TrackGraphTest {
     }
 
     public void testTurnoutTrailingNeedsMatchingPosition() {
-        TrackGraph g = turnoutYard(W);
+        TrackGraph g = turnoutYard(W_BR);
         // gs → Stoß → gerader Strang rückwärts → Spitze
         Continuation toBranch = g.next(g.edge("gs").backward(), TurnoutStates.allUnknown());
         DirectedEdge branch = ((Continuation.Next) toBranch).edge();
@@ -144,7 +145,7 @@ public class TrackGraphTest {
     }
 
     public void testFollowThroughTurnoutBothBranches() {
-        TrackGraph g = turnoutYard(W);
+        TrackGraph g = turnoutYard(W_BR);
         TrackGraph.FollowResult s = g.follow(g.edge("g0").forward(), 500, 1000, STRAIGHT);
         assertTrue(s.complete(), "gerade");
         assertEquals(List.of("g0", "w.STRAIGHT", "gs"), s.path().edges().stream().map(DirectedEdge::edgeId).toList());
@@ -160,7 +161,7 @@ public class TrackGraphTest {
     }
 
     public void testClearancePointsOnBranchAndBeyond() {
-        TrackGraph g = turnoutYard(W);
+        TrackGraph g = turnoutYard(W_BR);
         List<TrackLocation> s = g.clearancePoints("w", TurnoutPosition.STRAIGHT);
         assertEquals(1, s.size());
         assertLocation(new TrackLocation("w.STRAIGHT", 150), s.getFirst());
@@ -172,18 +173,16 @@ public class TrackGraphTest {
     }
 
     public void testClearanceBehindBufferStopIsError() {
-        TrackPiece.TurnoutPiece far = new TrackPiece.TurnoutPiece("TEST-W-FAR", TrackPiece.Hand.RIGHT,
-                TrackGeometry.straight(200), TrackGeometry.straight(200), 150, 1500);
+        TurnoutBranches far = new TurnoutBranches(200, 200, 150, 1500);
         TrackGraphException e = expectGraphError(() -> turnoutYard(far));
         assertTrue(e.problems().getFirst().contains("Grenzzeichen"), "Meldung nennt Grenzzeichen: " + e.problems());
     }
 
     public void testClearanceBehindFurtherTurnoutYieldsAllContinuations() {
         // Gerader Strang von w1 führt direkt an die Spitze von w2; Grenzzeichen 250 mm hinter der Spitze von w1.
-        TrackPiece.TurnoutPiece w1 = new TrackPiece.TurnoutPiece("TEST-W1", TrackPiece.Hand.LEFT,
-                TrackGeometry.straight(200), TrackGeometry.straight(210), 250, 150);
+        TurnoutBranches w1 = new TurnoutBranches(200, 210, 250, 150);
         TrackGraph g = TrackGraph.builder()
-                .place("w1", w1).place("w2", W).place("a", G1000).place("b", G1000).place("c", G1000).place("d", G1000)
+                .placeTurnout("w1", W, "w1", w1).placeTurnout("w2", W, "w2", W_BR).place("a", G1000).place("b", G1000).place("c", G1000).place("d", G1000)
                 .bufferStop("a", Port.A).connect("a", Port.B, "w1", Port.TIP)
                 .connect("w1", Port.STRAIGHT, "w2", Port.TIP)
                 .connect("w1", Port.DIVERGING, "b", Port.A).bufferStop("b", Port.B)
@@ -319,13 +318,13 @@ public class TrackGraphTest {
     }
 
     public void testPathValidation() {
-        TrackGraph g = turnoutYard(W);
+        TrackGraph g = turnoutYard(W_BR);
         assertThrows(IllegalArgumentException.class, () -> GraphPath.whole(g, List.of()));
         assertThrows(IllegalArgumentException.class,
                 () -> GraphPath.whole(g, List.of(g.edge("g0").forward(), g.edge("gs").forward())));
         assertThrows(IllegalArgumentException.class, () -> GraphPath.of(g, List.of(g.edge("g0").forward()), 600, 500));
         assertThrows(IllegalArgumentException.class, () -> GraphPath.of(g, List.of(g.edge("g0").forward()), 0, 1001));
-        TrackGraph other = turnoutYard(W);
+        TrackGraph other = turnoutYard(W_BR);
         TrackEdge foreign = new TrackEdge("g0", "x", Port.A, "y", Port.B, 5, "g0", TrackEdge.Role.PLAIN);
         assertThrows(IllegalArgumentException.class, () -> GraphPath.whole(other, List.of(foreign.forward())));
         assertThrows(IllegalArgumentException.class, () -> g.requireLocation(new TrackLocation("g0", 1000.5)));
@@ -335,7 +334,7 @@ public class TrackGraphTest {
 
     public void testIsolatingJointsAndConnectors() {
         TrackGraph g = TrackGraph.builder()
-                .place("a", G1000).place("b", G1000).place("w", W).place("c", G1000).place("d", G1000)
+                .place("a", G1000).place("b", G1000).placeTurnout("w", W, "w", W_BR).place("c", G1000).place("d", G1000)
                 .bufferStop("a", Port.A).connectIsolated("a", Port.B, "b", Port.A)
                 .connectIsolated("b", Port.B, "w", Port.TIP)
                 .connect("w", Port.STRAIGHT, "c", Port.A).bufferStop("c", Port.B)
@@ -355,7 +354,7 @@ public class TrackGraphTest {
 
     public void testTurnoutsTipToTip() {
         TrackGraph g = TrackGraph.builder()
-                .place("w1", W).place("w2", W)
+                .placeTurnout("w1", W, "w1", W_BR).placeTurnout("w2", W, "w2", W_BR)
                 .connect("w1", Port.TIP, "w2", Port.TIP)
                 .place("a", G1000).place("b", G1000).place("c", G1000).place("d", G1000)
                 .connect("w1", Port.STRAIGHT, "a", Port.A).bufferStop("a", Port.B)
@@ -374,18 +373,22 @@ public class TrackGraphTest {
     // --- Doppelkreuzungsweiche (Grundmodell) --------------------------------------------------------------------
 
     public void testDoubleSlipRoutesFollowBothHalves() {
-        TrackPiece.DoubleSlipPiece dkw = new TrackPiece.DoubleSlipPiece("TEST-DKW", Map.of(
-                Port.A1_B1, TrackGeometry.straight(230), Port.A2_B2, TrackGeometry.straight(230),
-                Port.A1_B2, TrackGeometry.arc(600, 22), Port.A2_B1, TrackGeometry.arc(600, 22)),
-                DoubleSlipLogic.assumedStandard());
-        TrackGraph.Builder b = TrackGraph.builder().place("d", dkw);
+        TrackPiece.DoubleSlipPiece dkw = new TrackPiece.DoubleSlipPiece("TEST-DKW",
+                new TrackPiece.DoubleSlipLengths(Map.of(Port.A1_B1, 230.0, Port.A2_B2, 230.0, Port.A1_B2, 230.0, Port.A2_B1, 230.0)),
+                DoubleSlipLogic.provisionalAssumption());
+        // Instanzwerte der verlegten DKW sind maßgeblich, nicht der Typ-Vorschlag (Entscheidung 41)
+        TrackPiece.DoubleSlipLengths lengths = new TrackPiece.DoubleSlipLengths(Map.of(
+                Port.A1_B1, 231.0, Port.A2_B2, 231.0, Port.A1_B2, 236.5, Port.A2_B1, 236.5));
+        TrackGraph.Builder b = TrackGraph.builder().placeDoubleSlip("d", dkw, "d.A", "d.B", lengths);
         for (Port p : List.of(Port.A1, Port.A2, Port.B1, Port.B2)) {
             String id = "x" + p;
             b.place(id, G1000).connect("d", p, id, Port.A).bufferStop(id, Port.B);
         }
         TrackGraph g = b.build();
         assertEquals(NodeKind.DOUBLE_SLIP, g.node("d.A").kind());
-        assertNear(600 * Math.toRadians(22), g.edge("d.A1_B2").lengthMm(), "Bogenfahrweg");
+        assertNear(236.5, g.edge("d.A1_B2").lengthMm(), "Bogenfahrweg aus Instanzwert");
+        assertEquals(1, g.notices().size());
+        assertTrue(g.notices().getFirst().contains("nicht an Hardware geprüft"), g.notices().toString());
         DirectedEdge fromA1 = g.edge("xA1").backward();
         // xA1 hängt direkt am Knoten d.A (Anschluss A1); fährt man xA1 rückwärts, kommt man über A1 an.
         TurnoutStates ss = TurnoutStates.of(Map.of("d.A", TurnoutPosition.STRAIGHT, "d.B", TurnoutPosition.STRAIGHT));
@@ -398,6 +401,25 @@ public class TrackGraphTest {
                 g.next(fromA1, TurnoutStates.allUnknown()));
         TrackGraph.FollowResult r = g.follow(fromA1, 0, 1500, dd);
         assertEquals(List.of("xA1", "d.A1_B2", "xB2"), r.path().edges().stream().map(DirectedEdge::edgeId).toList());
+    }
+
+    // --- Instanzwerte statt Typwerte (Entscheidung 41) ---------------------------------------------------------
+
+    public void testInstanceValuesOverrideTypeSuggestion() {
+        // Typ schlägt 200/204.7 mm vor; die verlegte Weiche hat eingetragene, abweichende Werte.
+        TurnoutBranches entered = new TurnoutBranches(239.07, 241.5, 120, 260);
+        TrackGraph g = turnoutYard(entered);
+        assertNear(239.07, g.edge("w.STRAIGHT").lengthMm(), "gerader Strang aus Instanzwert");
+        assertNear(241.5, g.edge("w.DIVERGING").lengthMm(), "Abzweig aus Instanzwert");
+        assertEquals(entered, ((TrackNode.TurnoutNode) g.node("w")).branches());
+        assertLocation(new TrackLocation("gd", 260 - 241.5), g.clearancePoints("w", TurnoutPosition.DIVERGING).getFirst());
+        assertEquals(List.of(), g.notices());
+    }
+
+    public void testTurnoutWithoutInstanceValuesIsRejected() {
+        TrackGraphException e = expectGraphError(() -> TrackGraph.builder().place("w", W).build());
+        assertTrue(e.problems().getFirst().contains("Entscheidung 41"), e.problems().toString());
+        expectGraphError(() -> TrackGraph.builder().placeTurnout("w", W, "w", null).build());
     }
 
     // --- Prüfung beim Bau ---------------------------------------------------------------------------------------

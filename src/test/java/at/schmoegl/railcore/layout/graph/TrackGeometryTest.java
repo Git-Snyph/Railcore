@@ -41,23 +41,21 @@ public class TrackGeometryTest {
         assertThrows(IllegalArgumentException.class, TrackGeometry::compound);
     }
 
-    public void testTurnoutBranchLengthsFromGeometry() {
-        TrackPiece.TurnoutPiece w = new TrackPiece.TurnoutPiece("TEST-W", TrackPiece.Hand.LEFT,
-                TrackGeometry.straight(200), TrackGeometry.compound(TrackGeometry.arc(400, 15), TrackGeometry.straight(100)),
-                150, 250);
-        TurnoutBranches b = w.branches();
+    public void testTurnoutBranchesAreEnteredValues() {
+        // Weichenlängen werden eingetragen, nicht aus Radius und Winkel berechnet (Entscheidung 41).
+        TurnoutBranches b = new TurnoutBranches(200, 204.7, 150, 250);
         assertNear(200, b.lengthMm(TurnoutPosition.STRAIGHT), "gerader Strang");
-        assertNear(400 * Math.PI / 12 + 100, b.lengthMm(TurnoutPosition.DIVERGING), "Abzweig");
+        assertNear(204.7, b.lengthMm(TurnoutPosition.DIVERGING), "Abzweig");
         assertNear(150, b.clearanceMm(TurnoutPosition.STRAIGHT), "Grenzzeichen gerade");
         assertNear(250, b.clearanceMm(TurnoutPosition.DIVERGING), "Grenzzeichen Abzweig");
         assertThrows(IllegalArgumentException.class, () -> b.lengthMm(TurnoutPosition.UNKNOWN));
     }
 
     public void testClearanceMarkIsMandatory() {
-        assertThrows(IllegalArgumentException.class, () -> new TrackPiece.TurnoutPiece("X", TrackPiece.Hand.RIGHT,
-                TrackGeometry.straight(200), TrackGeometry.arc(400, 15), 0, 250));
-        assertThrows(IllegalArgumentException.class, () -> new TrackPiece.TurnoutPiece("X", TrackPiece.Hand.RIGHT,
-                TrackGeometry.straight(200), TrackGeometry.arc(400, 15), 150, Double.NaN));
+        assertThrows(IllegalArgumentException.class, () -> new TurnoutBranches(200, 210, 0, 250));
+        assertThrows(IllegalArgumentException.class, () -> new TurnoutBranches(200, 210, 150, Double.NaN));
+        assertThrows(IllegalArgumentException.class, () -> new TurnoutBranches(0, 210, 150, 250));
+        assertThrows(IllegalArgumentException.class, () -> new TrackPiece.TurnoutPiece("X", TrackPiece.Hand.RIGHT, null));
     }
 
     public void testCrossingPointInsideLines() {
@@ -74,9 +72,18 @@ public class TrackGeometryTest {
         DoubleSlipLogic.Setting dd = new DoubleSlipLogic.Setting(TurnoutPosition.DIVERGING, TurnoutPosition.DIVERGING);
         // A1_B1 und A1_B2 verlangen dieselbe Lage: ab A1 wäre die Fortsetzung mehrdeutig.
         assertThrows(IllegalArgumentException.class, () -> new DoubleSlipLogic(Map.of(
-                Port.A1_B1, ss, Port.A1_B2, ss, Port.A2_B1, dd, Port.A2_B2, dd)));
-        assertThrows(IllegalArgumentException.class, () -> new DoubleSlipLogic(Map.of(Port.A1_B1, ss)));
-        assertEquals(dd, DoubleSlipLogic.assumedStandard().setting(Port.A2_B1));
+                Port.A1_B1, ss, Port.A1_B2, ss, Port.A2_B1, dd, Port.A2_B2, dd), true));
+        assertThrows(IllegalArgumentException.class, () -> new DoubleSlipLogic(Map.of(Port.A1_B1, ss), true));
+        assertEquals(dd, DoubleSlipLogic.provisionalAssumption().setting(Port.A2_B1));
+        assertEquals(false, DoubleSlipLogic.provisionalAssumption().hardwareVerified());
+    }
+
+    public void testDoubleSlipLengthsNeedAllFourRoutes() {
+        assertThrows(IllegalArgumentException.class, () -> new TrackPiece.DoubleSlipLengths(Map.of(Port.A1_B1, 230.0)));
+        assertThrows(IllegalArgumentException.class, () -> new TrackPiece.DoubleSlipLengths(Map.of(
+                Port.A1_B1, 230.0, Port.A2_B2, 230.0, Port.A1_B2, 0.0, Port.A2_B1, 236.0)));
+        assertThrows(IllegalArgumentException.class, () -> new TrackPiece.DoubleSlipLengths(Map.of(
+                Port.A1, 230.0, Port.A2_B2, 230.0, Port.A1_B2, 236.0, Port.A2_B1, 236.0)));
     }
 
     public void testCatalog() {
