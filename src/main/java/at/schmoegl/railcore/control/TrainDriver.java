@@ -22,7 +22,9 @@ import java.util.Optional;
  * Steuerungs-Thread: als {@link ControlExecutor.TickTask} (Bewegungsrechnung mit tatsächlich vergangener Zeit), als
  * {@link ControlExecutor.FeedbackObserver} (Positionsabgleich sofort beim Meldepunkt) und über eingeplante Aufgaben
  * (Brems- und Haltebefehle zum vorausberechneten Zeitpunkt). Alle Befehle gehen durch die Befehlsschranke des
- * Executors (Reservierung, Nothalt, Betriebszustand).
+ * Executors (Reservierung, Nothalt, Betriebszustand) und den {@link CommandScheduler}: Anfahren als Automatik,
+ * Bremsstufen und Halt als Sicherheit. Ein Fahrbefehl wirkt in der Positionsschätzung erst ab seinem tatsächlichen
+ * Sendezeitpunkt; die Vorhersage rechnet die voraussichtliche Wartezeit im Befehlsplaner mit ein.
  * <p>
  * Ablauf Bahnsteig: Bremskurve auf das Annäherungstempo (ggf. mit begrenztem Überfahrtempo am Meldepunkt), bei
  * Annäherungstempo wird der Haltebefehl auf {@code t = jetzt + (Ziel − Auslaufweg − Position) / v − mittlere

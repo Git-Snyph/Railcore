@@ -174,7 +174,7 @@ public final class CommandScheduler implements CommandSink {
         this.emergencyEpoch = Objects.requireNonNull(emergencyEpoch);
         this.correction = Objects.requireNonNull(correction);
         long now = clock.nanoTime();
-        this.budget = correction.correct(config.budgetPerSecond(0));
+        this.budget = config.budgetPerSecond(0);           // Korrektur erst im Takt, dort nie über dem Modell
         this.tokens = config.burstCommands();
         this.lastRefillNanos = now;
         this.demandWindowStart = now;

@@ -31,7 +31,9 @@ import java.util.concurrent.atomic.AtomicLong;
  * nie „Takt × n“. Brems- und Haltebefehle werden mit {@link #schedule} auf ihren vorausberechneten Zeitpunkt
  * eingeplant und dann ausgeführt, unabhängig vom Taktraster. Die Abweichung der Takte und der eingeplanten Befehle
  * von ihrem Sollzeitpunkt wird gemessen und gedrosselt im Journal berichtet ({@code TICK_JITTER}).
- * Nach jedem Schritt veröffentlicht der Executor eine unveränderliche {@link PlantSnapshot}.
+ * Befehle laufen über die Sicherheitsschranke und den {@link CommandScheduler} (Vorrang, DCC-Budget, Entscheidung
+ * 27), dessen Sendezeitpunkte ebenfalls über {@link #schedule} laufen. Nach jedem Schritt veröffentlicht der
+ * Executor eine unveränderliche {@link PlantSnapshot}.
  * <p>
  * <b>Nothalt</b> ({@link #emergencyStop}) ist aus jedem Thread aufrufbar, sendet sofort an die Zentrale – ohne
  * Warteschlange und ohne auf den Executor zu warten (Grundsatz 7) – und lässt den Executor den Zustand danach
