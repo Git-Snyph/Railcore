@@ -15,11 +15,12 @@ import java.util.Map;
  * @param driveSpeedStep     Fahrstufe für die Fahrprüfung (128-Fahrstufen-Modus), 1..{@link #MAX_DRIVE_STEP}
  * @param pomDecoderAddress  Decoderadresse für POM-Zubehör; Standard (weiche − 1) / 4 – an Hardware zu prüfen
  * @param pomCv              CV für den POM-Lesetest, 0 = POM-Prüfung auslassen
+ * @param proxyPollMs        Abstand der Lokinfo-Abfragen der Stellvertreter-Adresse während der Beobachtung, 0 = aus
  */
 public record CheckConfig(String host, int port, Mode mode, int observeSeconds, int replyTimeoutMs, int linkTimeoutMs,
                           int confirmTimeoutSeconds, int turnoutAddress, int turnoutPulseMs, int proxyAddress,
                           int driveSpeedStep, int driveMillis, int pomDecoderAddress, int pomCv, int cvTimeoutMs,
-                          Path reportDir, Path logDir) {
+                          int proxyPollMs, Path reportDir, Path logDir) {
 
     /** Stufe 1 (nur lesen) oder Stufe 2 (Eingriffe nach Einzelbestätigung). */
     public enum Mode {
@@ -51,6 +52,7 @@ public record CheckConfig(String host, int port, Mode mode, int observeSeconds, 
         range("POM-Decoderadresse", pomDecoderAddress, 0, 0x7FF);
         range("POM-CV", pomCv, 0, 1024);
         range("CV-Antwortzeit (ms)", cvTimeoutMs, replyTimeoutMs, 60_000);
+        if (proxyPollMs != 0) range("Abfrageabstand Stellvertreter (ms)", proxyPollMs, 100, 5000);
         if (reportDir == null || logDir == null) throw new IllegalArgumentException("Verzeichnis fehlt");
     }
 
@@ -83,6 +85,7 @@ public record CheckConfig(String host, int port, Mode mode, int observeSeconds, 
         o.put("--pom-decoder", "");
         o.put("--pom-cv", "8");
         o.put("--cv-ms", "5000");
+        o.put("--abfrage-ms", "250");
         o.put("--bericht", "berichte");
         o.put("--journal", "logs");
         for (int i = 0; i < args.length; i++) {
@@ -102,7 +105,8 @@ public record CheckConfig(String host, int port, Mode mode, int observeSeconds, 
         return new CheckConfig(o.get("--host").trim(), num(o, "--port"), mode, num(o, "--dauer"), num(o, "--antwort-ms"),
                 num(o, "--verbindung-ms"), num(o, "--bestaetigung-s"), turnout, num(o, "--puls-ms"),
                 num(o, "--stellvertreter"), num(o, "--fahrstufe"), num(o, "--fahrzeit-ms"), pomDecoder,
-                num(o, "--pom-cv"), num(o, "--cv-ms"), Path.of(o.get("--bericht")), Path.of(o.get("--journal")));
+                num(o, "--pom-cv"), num(o, "--cv-ms"), num(o, "--abfrage-ms"),
+                Path.of(o.get("--bericht")), Path.of(o.get("--journal")));
     }
 
     private static int num(Map<String, String> o, String k) {
@@ -116,7 +120,7 @@ public record CheckConfig(String host, int port, Mode mode, int observeSeconds, 
     public CheckConfig withMode(Mode m) {
         return new CheckConfig(host, port, m, observeSeconds, replyTimeoutMs, linkTimeoutMs, confirmTimeoutSeconds,
                 turnoutAddress, turnoutPulseMs, proxyAddress, driveSpeedStep, driveMillis, pomDecoderAddress, pomCv,
-                cvTimeoutMs, reportDir, logDir);
+                cvTimeoutMs, proxyPollMs, reportDir, logDir);
     }
 
     public static String usage() {
@@ -137,6 +141,7 @@ public record CheckConfig(String host, int port, Mode mode, int observeSeconds, 
                   --pom-decoder <Adr.>     Decoderadresse für POM-Zubehör (Standard (Weiche−1)/4, an Hardware zu prüfen)
                   --pom-cv <CV>            CV für den POM-Lesetest, 0 = auslassen (Standard 8)
                   --cv-ms <ms>             Wartezeit auf eine CV-Antwort (Standard 5000)
+                  --abfrage-ms <ms>        Stellvertreter-Adresse während der Beobachtung abfragen, 100–5000, 0 = aus (Standard 250)
                   --bericht <Ordner>       Ordner für den Prüfbericht (Standard berichte)
                   --journal <Ordner>       Ordner für das Journal (Standard logs)
                 """;

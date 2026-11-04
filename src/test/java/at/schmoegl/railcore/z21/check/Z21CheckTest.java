@@ -133,6 +133,26 @@ public class Z21CheckTest {
         for (byte[] p : sim.sent) assertEquals(false, CommandClass.of(p) == CommandClass.ACTIVE);
     }
 
+    public void testProxyPollingSeesHandControllerWithoutBroadcast() {
+        // Abfrage 1 = Lokinfo beim Start; Handregler ab Abfrage 3 vorwärts Fahrstufe 5 (0x80 | 6),
+        // ab Abfrage 6 rückwärts Fahrstufe 0 (0x00) – ohne jede Meldung der Zentrale
+        sim.handControllerBeforeQuery(3, 9001, 0x86);
+        sim.handControllerBeforeQuery(6, 9001, 0x00);
+        CheckReport r = run(new ScriptedOperator());
+        Finding f = f(r, "Stellvertreter-Adresse per Abfrage");
+        assertEquals(Outcome.CONFIRMED, f.outcome());
+        assertEquals(true, f.detail().contains("Fahrstufe 5, vorwärts"));
+        assertEquals(true, f.detail().contains("Fahrstufe 0, rückwärts"));
+        assertEquals(Outcome.UNKNOWN, f(r, "Handregler-Befehle auf Stellvertreter-Adresse sichtbar").outcome());
+        for (byte[] p : sim.sent) assertEquals(CommandClass.PASSIVE, CommandClass.of(p));
+    }
+
+    public void testProxyPollingCanBeSwitchedOff() {
+        CheckReport r = run(new ScriptedOperator(), "--abfrage-ms", "0");
+        assertEquals(Outcome.NOT_TESTED, f(r, "Stellvertreter-Adresse per Abfrage").outcome());
+        assertEquals(1, sim.sentMatching("09 00 40 00 E3 F0").size());
+    }
+
     public void testMouseCommandOnProxyIsDetected() {
         sim.broadcastAt(800, sim.locoInfo(9001));
         CheckReport r = run(new ScriptedOperator());
