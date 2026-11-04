@@ -88,6 +88,7 @@ Logo: `docs/bilder/railcore-logo.png`. Programmsymbol: `docs/bilder/railcore-ico
 - Neue Arbeit auf einem eigenen Branch, nicht direkt auf `main`.
 - Zu Beginn jeder Sitzung git fetch ausführen; gibt es auf origin/main neue Commits, den Nutzer informieren und nach Bestätigung übernehmen.
 - Pull Requests mit `gh pr merge` nur nach grünem Build (`gradlew build -q`) und ausdrücklicher Zustimmung des Nutzers mergen.
+- Merge nur, wenn die GitHub Action grün ist.
 
 ## Stand
 
