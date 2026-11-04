@@ -47,7 +47,8 @@ public class ControlRuntimeSimTest {
         assertEquals(List.of(), station.drives());                              // offline nichts gesendet
         rt.connect();
         runMs(100);
-        assertEquals(OperatingState.FAULT, rt.snapshot().operatingState());   // Entscheidung 33: Nothalt beim ersten Verbinden
+        assertEquals(OperatingState.EMERGENCY_STOP, rt.snapshot().operatingState());   // Entscheidungen 33, 34
+        assertEquals(true, rt.snapshot().stateReason().startsWith("Programmstart"));
         assertEquals(1, station.emergencyStops());
         assertEquals(Set.of(3, 4), Set.copyOf(station.drives().stream().map(SimCommandStation.SentDrive::address).toList()));
         assertTrue(station.drives().stream().allMatch(d -> d.step() == 0), "nur Halt, nie eine Fahrstufe");
@@ -87,6 +88,19 @@ public class ControlRuntimeSimTest {
         t.start();
         t.join();
         assertTrue(seen[0] instanceof WrongThreadException, "Befehle nur vom Steuerungs-Thread: " + seen[0]);
+    }
+
+    /** Entscheidung 34 gilt nur für den Nothalt beim Programmstart: ein anderer Nothalt in „Verbinde“ bleibt Störung. */
+    public void testOtherEmergencyWhileConnectingStillLeadsToFault() {
+        FakeStation fake = new FakeStation();
+        ControlExecutor plain = ControlExecutor.create(ControlConfig.defaults(), clock, journal, fake, List.of(1));
+        fake.connected();
+        plain.step();
+        assertEquals(OperatingState.CONNECTING, plain.snapshot().operatingState());   // ohne Laufzeit kein Startnothalt
+        plain.emergencyStop("Test", "Nothalt-Taste beim Verbinden");
+        plain.step();
+        assertEquals(OperatingState.FAULT, plain.snapshot().operatingState());
+        assertEquals(true, plain.snapshot().emergencyLatched());
     }
 
     public void testHandControllerConfigValidated() {

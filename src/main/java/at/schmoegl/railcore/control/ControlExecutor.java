@@ -210,7 +210,10 @@ public final class ControlExecutor {
     public void emergencyStop(String source, String reason) { sendEmergencyStop(source, reason); }
 
     /** Wie {@link #emergencyStop}; @return true, wenn der Nothalt an die Zentrale gesendet werden konnte */
-    boolean sendEmergencyStop(String source, String reason) {
+    boolean sendEmergencyStop(String source, String reason) { return sendEmergencyStop(source, reason, false); }
+
+    /** @param startup Nothalt beim ersten Verbinden nach dem Programmstart (Entscheidungen 33, 34) */
+    private boolean sendEmergencyStop(String source, String reason, boolean startup) {
         emergencyEpoch.incrementAndGet();   // vor dem Senden: der Befehlsplaner sendet danach keine Fahrt mehr
         boolean sent;
         try {
@@ -222,7 +225,7 @@ public final class ControlExecutor {
             journal.critical("nothalt", "EMERGENCY_STOP_SEND_FAILED", "Nothalt konnte nicht gesendet werden (" + source + "): " + reason + " – " + e);
         }
         boolean wasSent = sent;
-        urgent.add(new Task("Nothalt nachziehen", () -> applyEmergency(source, reason, wasSent)));
+        urgent.add(new Task("Nothalt nachziehen", () -> applyEmergency(source, reason, wasSent, startup)));
         queue.offer(WAKE);
         return sent;
     }
@@ -653,11 +656,18 @@ public final class ControlExecutor {
         plant.clearStationViews(why);
     }
 
-    private void applyEmergency(String source, String reason, boolean sent) {
+    /** Grund im Zustand und in der Momentaufnahme beim Nothalt nach dem Programmstart (Entscheidung 34). */
+    static final String STARTUP_REASON = "Programmstart";
+
+    private void applyEmergency(String source, String reason, boolean sent, boolean startup) {
         plant.latchEmergency(source + ": " + reason);
         scheduler.onEmergency();
-        if (plant.operatingState() != OperatingState.FAULT
-                && !plant.transition(OperatingState.EMERGENCY_STOP, "Nothalt (" + source + "): " + reason)) {
+        OperatingState s = plant.operatingState();
+        // „Verbinde → Nothalt“ gibt es nur für den Nothalt beim Programmstart (Entscheidung 34); jeder andere Nothalt
+        // im Zustand „Verbinde“ führt wie bisher nach „Störung“.
+        boolean allowed = s != OperatingState.CONNECTING || startup;
+        String why = startup ? STARTUP_REASON + ": " + reason : "Nothalt (" + source + "): " + reason;
+        if (s != OperatingState.FAULT && !(allowed && plant.transition(OperatingState.EMERGENCY_STOP, why))) {
             enterFault(source, "Nothalt im Zustand " + plant.operatingState().german() + ": " + reason);
         }
         if (!sent) enterFault(source, "Nothalt konnte nicht an die Zentrale gesendet werden");
@@ -744,9 +754,9 @@ public final class ControlExecutor {
                 if (emergencyOnFirstConnect && !firstConnectDone) {
                     // Entscheidung 33 (2) / Grundsatz 5: nach dem Programmstart steht nichts als gesichert fest – auch
                     // Loks, die RailCore nicht kennt, müssen stehen. Nothalt am Befehlsplaner vorbei, nur Quittieren hebt
-                    // ihn auf (Sperre aus Entscheidung 23). Aus „Verbinde“ führt er nach „Störung“ (Zustandsmodell).
-                    emergencyStop("verbindung", "Erstes Verbinden nach Programmstart – Nothalt für die ganze Anlage "
-                            + "(Entscheidung 33), bitte quittieren");
+                    // ihn auf (Sperre aus Entscheidung 23). Zustand „Nothalt“ mit Grund „Programmstart“ (Entscheidung 34).
+                    sendEmergencyStop("verbindung", "Programmstart – erstes Verbinden, Nothalt für die ganze Anlage "
+                            + "(Entscheidung 33), bitte quittieren", true);
                 }
                 firstConnectDone = true;
                 scheduler.connectionRestored();     // zusätzlich Halt je bekannter Lok (Entscheidung 28)
@@ -773,7 +783,7 @@ public final class ControlExecutor {
         if (p == TrackPower.SHORT_CIRCUIT) {
             enterFault("zentrale", "Zentrale meldet Kurzschluss");
         } else if (p == TrackPower.EMERGENCY_STOP && operating) {
-            applyEmergency("zentrale", "Zentrale meldet Nothalt", true);
+            applyEmergency("zentrale", "Zentrale meldet Nothalt", true, false);
         }
     }
 

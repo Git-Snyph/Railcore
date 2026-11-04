@@ -101,7 +101,8 @@ public class Z21RuntimeTest {
         assertEquals(1L, z21.count(drive(3, 0, Direction.FORWARD)));             // zusätzlich Halt je bekannter Lok
         PlantSnapshot s = rt.snapshot();
         assertEquals(true, s.emergencyLatched());
-        assertEquals(OperatingState.FAULT, s.operatingState());                   // aus „Verbinde“ laut Zustandsmodell
+        assertEquals(OperatingState.EMERGENCY_STOP, s.operatingState());          // Entscheidung 34: direkt in „Nothalt“
+        assertTrue(s.stateReason().startsWith("Programmstart"), "Grund sichtbar: " + s.stateReason());
         assertTrue(journal.byCode("EMERGENCY_STOP_SENT").stream().anyMatch(e -> e.message().contains("Entscheidung 33")),
                 "Ursache im Journal");
 
