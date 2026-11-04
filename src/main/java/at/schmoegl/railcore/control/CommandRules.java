@@ -1,5 +1,6 @@
 package at.schmoegl.railcore.control;
 
+import at.schmoegl.railcore.core.Direction;
 import at.schmoegl.railcore.core.StationCapabilities;
 import at.schmoegl.railcore.safety.CommunicationWatchdog;
 import at.schmoegl.railcore.safety.OperatingState;
@@ -26,6 +27,20 @@ final class CommandRules {
         return why;
     }
 
+    /**
+     * Kennzeichnung nach Kurzschluss bzw. Spannungsausfall ({@link TrainCaution#blocksIncrease}): Anfahren,
+     * Beschleunigen und Richtungswechsel sind gesperrt, Bremsen bleibt erlaubt, damit die Automatik geordnet hält.
+     *
+     * @param sentStep      zuletzt an die Zentrale gesendete Fahrstufe (0, wenn nie gesendet)
+     * @param sentDirection zuletzt gesendete Richtung ({@code null}, wenn nie gesendet)
+     * @return Grund oder null
+     */
+    String increaseBlocked(int address, int step, Direction direction, int sentStep, Direction sentDirection) {
+        if (step == 0 || !plant.increaseBlocked(address)) return null;
+        if (sentDirection != null && direction == sentDirection && step <= sentStep) return null;   // Bremsen/Halten
+        return "Zug gekennzeichnet (" + plant.increaseBlockingCautions(address) + ") – nur Bremsen und Halten erlaubt";
+    }
+
     /** @return Grund, warum Gleisspannung ein bzw. Weichen stellen gesperrt ist, oder null */
     String accessoryBlocked() { return blocked(false); }
 
@@ -48,6 +63,13 @@ final class CommandRules {
     String queryBlocked() {
         if (plant.operatingState() == OperatingState.OFFLINE) return "keine Verbindung zur Zentrale";
         if (plant.communication() == CommunicationWatchdog.Status.LOST) return "Verbindung zur Zentrale verloren";
+        return null;
+    }
+
+    /** Fähigkeiten nie voraussetzen: Melderabfrage nur, wenn die Zentrale sie erkennbar kann. @return Grund oder null */
+    String detectorQueryUnsupported() {
+        if (!plant.capabilities().has(StationCapabilities.Feature.DETECTOR_STATUS_QUERY))
+            return "Zentrale unterstützt die Melderabfrage nicht erkennbar (" + plant.capabilities().describe() + ")";
         return null;
     }
 

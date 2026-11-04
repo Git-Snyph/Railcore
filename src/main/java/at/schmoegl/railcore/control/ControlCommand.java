@@ -27,6 +27,15 @@ public sealed interface ControlCommand {
         public RequestReady { Objects.requireNonNull(operator); }
     }
 
+    /**
+     * Kennzeichnungen eines Zuges nach einer Störung aufheben ({@link TrainCaution}; ausdrückliche Bedienhandlung,
+     * nachdem der Bediener die Lage geprüft hat). Abgewiesen, solange ein Bezirk oder die Gleisspannung nicht
+     * versorgt ist oder die Verbindung zur Zentrale nicht in Ordnung ist. Der Zug bleibt „unbestätigt“.
+     */
+    record ReleaseTrainCaution(String trainId, String operator) implements ControlCommand {
+        public ReleaseTrainCaution { Objects.requireNonNull(trainId); Objects.requireNonNull(operator); }
+    }
+
     /** Zug anmelden; er startet „unbestätigt“. */
     record RegisterTrain(Train train, String operator) implements ControlCommand {
         public RegisterTrain { Objects.requireNonNull(train); Objects.requireNonNull(operator); }

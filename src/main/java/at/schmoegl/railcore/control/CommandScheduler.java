@@ -54,7 +54,7 @@ public final class CommandScheduler implements CommandSink {
     private static final double EPS = 1e-9;
     private static final long SECOND = 1_000_000_000L;
 
-    private enum Kind { DRIVE, FUNCTION, TURNOUT, QUERY }
+    private enum Kind { DRIVE, FUNCTION, TURNOUT, QUERY, DETECTOR_QUERY, STATION_REFRESH }
 
     private record Key(Kind kind, int address, int index) {}
 
@@ -65,6 +65,23 @@ public final class CommandScheduler implements CommandSink {
 
     private static final Query QUERY_VALUE = new Query();
 
+    /** Wert einer Melderabfrage (kein DCC-Paket, Kosten 0, ein Platz für alle Melder). */
+    private record DetectorQuery() {}
+
+    private static final DetectorQuery DETECTOR_QUERY_VALUE = new DetectorQuery();
+
+    /** Wert einer Neueinlese-Anforderung an die Zentrale (kein DCC-Paket, Kosten 0). */
+    private record StationRefresh() {}
+
+    private static final StationRefresh STATION_REFRESH_VALUE = new StationRefresh();
+
+    /**
+     * Zuletzt an die Zentrale gesendeter Fahrbefehl einer Lok (für die Abweichungsprüfung).
+     *
+     * @param confirmed gesendet bei intakter Verbindung und seither weder Verbindungsverlust noch Nothalt
+     */
+    record SentDrive(int step, Direction direction, SpeedSteps steps, long sentNanos, boolean confirmed) {}
+
     private static final class Slot {
         final Key key;
         Object sent;                    // zuletzt gesendeter Wert, null = nie
@@ -72,6 +89,9 @@ public final class CommandScheduler implements CommandSink {
         /** Bekannte Lok (angemeldeter Zug) ohne gesendeten Wert: erhält nach dem Verbinden trotzdem Halt. */
         SpeedSteps knownSteps;
         long lastCommandNanos = Long.MIN_VALUE;
+        /** Vorher gesendeter Wert und Sendezeitpunkt des aktuellen (Echo-Spielraum der Abweichungsprüfung). */
+        Object previousSent;
+        long sentNanos = Long.MIN_VALUE;
         Pending pending;
 
         Slot(Key key) { this.key = key; }
@@ -261,6 +281,26 @@ public final class CommandScheduler implements CommandSink {
                 "Abfrage Lok " + address);
     }
 
+    /**
+     * Melderabfrage (alle Melder): kein DCC-Paket, Kosten 0; wartet in der Vorrangreihenfolge, wartende Abfragen
+     * werden zusammengefasst, nie als „unverändert“ unterdrückt.
+     */
+    @Override
+    public boolean requestDetectorStatus(CommandPriority priority) {
+        guard.check("Melderabfrage planen");
+        requireQueued(priority);
+        return submit(new Key(Kind.DETECTOR_QUERY, 0, 0), DETECTOR_QUERY_VALUE, priority, 0, DriveListener.NONE,
+                "Melderabfrage");
+    }
+
+    /** Zustände der Zentrale neu einlesen: kein DCC-Paket, Kosten 0; wartende Anforderungen werden zusammengefasst. */
+    @Override
+    public boolean refreshStationState(CommandPriority priority) {
+        guard.check("Neueinlesen planen");
+        requireQueued(priority);
+        return submit(new Key(Kind.STATION_REFRESH, 0, 0), STATION_REFRESH_VALUE, priority, 0, DriveListener.NONE,
+                "Zustände neu einlesen");
+    }
     /** Gleisspannung ist kein DCC-Paket: ohne Warteschlange, sofort. */
     @Override
     public boolean trackPower(boolean on) {
@@ -429,6 +469,56 @@ public final class CommandScheduler implements CommandSink {
         // (kein Verzug; bei einer stehenden Lok wechselt höchstens Licht oder Richtung)
         Direction dir = plant.reportedLoco(s.key.address()).map(l -> l.direction()).orElse(Direction.FORWARD);
         return new DriveValue(0, dir, s.knownSteps);
+    }
+
+    /** Zuletzt gesendeter Fahrbefehl der Lok; leer, wenn ihr in dieser Sitzung nie einer gesendet wurde. */
+    java.util.Optional<SentDrive> sentDrive(int address) {
+        guard.check("Gesendeten Fahrbefehl lesen");
+        Slot s = slots.get(new Key(Kind.DRIVE, address, 0));
+        if (s == null || !(s.sent instanceof DriveValue d)) return java.util.Optional.empty();
+        return java.util.Optional.of(new SentDrive(d.step(), d.direction(), d.steps(), s.sentNanos, s.confirmed));
+    }
+
+    /** Wartet für die Lok noch ein Fahrbefehl? */
+    boolean drivePending(int address) {
+        guard.check("Wartenden Fahrbefehl lesen");
+        Slot s = slots.get(new Key(Kind.DRIVE, address, 0));
+        return s != null && s.pending != null;
+    }
+
+    /**
+     * Prüft eine Lokmeldung der Zentrale gegen den zuletzt gesendeten Fahrbefehl (Lastenheft 7, Nachkorrektur).
+     * Keine Abweichung, wenn nie gesendet wurde, noch ein Befehl wartet (der neue Wert überschreibt) oder die Meldung
+     * dem vorher gesendeten Wert entspricht und der letzte Befehl jünger als {@code echoGraceNanos} ist (verspätetes
+     * Echo). Verglichen werden Fahrstufe und Richtung, nicht die Funktionen.
+     *
+     * @return der zuletzt gesendete Fahrbefehl, wenn die Meldung von ihm abweicht; sonst leer
+     */
+    java.util.Optional<SentDrive> divergence(at.schmoegl.railcore.core.LocoState reported, long echoGraceNanos) {
+        guard.check("Lokmeldung prüfen");
+        Slot s = slots.get(new Key(Kind.DRIVE, reported.address(), 0));
+        if (s == null || s.pending != null || !(s.sent instanceof DriveValue d)) return java.util.Optional.empty();
+        if (matches(d, reported)) return java.util.Optional.empty();
+        // Nach Nothalt bzw. Verbindungsverlust ist der gesendete Wert unbestätigt: eine stehende Lok ist dann die
+        // erwartete Folge, keine Abweichung
+        if (!s.confirmed && reported.speedStep() == 0) return java.util.Optional.empty();
+        if (s.previousSent instanceof DriveValue prev && matches(prev, reported)
+                && clock.nanoTime() - s.sentNanos < echoGraceNanos) return java.util.Optional.empty();
+        return java.util.Optional.of(new SentDrive(d.step(), d.direction(), d.steps(), s.sentNanos, s.confirmed));
+    }
+
+    private static boolean matches(DriveValue d, at.schmoegl.railcore.core.LocoState r) {
+        return d.step() == r.speedStep() && d.direction() == r.direction();
+    }
+
+    /**
+     * Die Zentrale hat für die Lok einen anderen Zustand als den gesendeten: der gesendete Wert gilt als unbestätigt,
+     * damit ein erneutes Senden nicht als „unverändert“ unterdrückt wird.
+     */
+    void markDriveUnconfirmed(int address) {
+        guard.check("Fahrbefehl unbestätigt");
+        Slot s = slots.get(new Key(Kind.DRIVE, address, 0));
+        if (s != null) s.confirmed = false;
     }
 
     /** Ist die Verbindung laut Befehlsplaner da (seit Start bzw. Verlust neu verbunden)? */
@@ -662,7 +752,7 @@ public final class CommandScheduler implements CommandSink {
             case DriveValue d -> sendDrive(p, d, now);
             case Boolean on -> {
                 station.setLocoFunction(s.key.address(), s.key.index(), on);
-                markSent(p, on);
+                markSent(p, on, now);
             }
             case TurnoutPosition pos -> {
                 String why = rules.accessoryBlocked();
@@ -674,7 +764,7 @@ public final class CommandScheduler implements CommandSink {
                     return;
                 }
                 station.setTurnout(s.key.address(), pos);
-                markSent(p, pos);
+                markSent(p, pos, now);
             }
             case Query q -> {
                 String why = linkDown ? "Verbindung nicht hergestellt" : rules.queryBlocked();
@@ -684,7 +774,27 @@ public final class CommandScheduler implements CommandSink {
                     return;
                 }
                 station.requestLocoState(s.key.address());
-                markSent(p, q);
+                markSent(p, q, now);
+            }
+            case StationRefresh q -> {
+                String why = linkDown ? "Verbindung nicht hergestellt" : rules.queryBlocked();
+                if (why != null) {
+                    countDropped();
+                    journal.debug("befehle", "COMMAND_DROPPED", "Neueinlesen entfällt: " + why);
+                    return;
+                }
+                station.refreshState();
+                markSent(p, q, now);
+            }
+            case DetectorQuery q -> {
+                String why = linkDown ? "Verbindung nicht hergestellt" : rules.queryBlocked();
+                if (why != null) {
+                    countDropped();
+                    journal.debug("befehle", "COMMAND_DROPPED", "Melderabfrage entfällt: " + why);
+                    return;
+                }
+                station.requestDetectorStatus();
+                markSent(p, q, now);
             }
             default -> throw new IllegalStateException("Unbekannter Befehlswert " + p.value);
         }
@@ -696,6 +806,11 @@ public final class CommandScheduler implements CommandSink {
         if (d.step() > 0) {
             String why = rules.movementBlocked(address);
             if (why == null && emergencyEpoch.getAsLong() != seenEpoch) why = "Nothalt angefordert";
+            if (why == null) {
+                DriveValue sent = p.slot.sent instanceof DriveValue v ? v : null;
+                why = rules.increaseBlocked(address, d.step(), d.direction(), sent == null ? 0 : sent.step(),
+                        sent == null ? null : sent.direction());
+            }
             if (why != null) {
                 dropReason = why;
                 countDropped();
@@ -706,7 +821,7 @@ public final class CommandScheduler implements CommandSink {
         }
         long epochBefore = emergencyEpoch.getAsLong();
         station.setLocoDrive(address, d.step(), d.steps(), d.direction());
-        markSent(p, d);
+        markSent(p, d, now);
         if (d.step() > 0 && emergencyEpoch.getAsLong() != epochBefore) {
             // Nothalt aus einem anderen Thread während dieses Sendens: Nothalt muss der letzte Befehl sein
             station.emergencyStop();
@@ -717,9 +832,11 @@ public final class CommandScheduler implements CommandSink {
         if (dropReason != null) p.listener.dropped(dropReason);
     }
 
-    private void markSent(Pending p, Object value) {
+    private void markSent(Pending p, Object value, long now) {
         Slot s = p.slot;
+        s.previousSent = s.sent;
         s.sent = value;
+        s.sentNanos = now;
         s.confirmed = !linkDown;
         total.sent++;
         window.sent++;

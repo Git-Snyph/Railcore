@@ -28,7 +28,23 @@ public final class SimWorld {
         long nextDueNanos();
 
         void pump();
+
+        /**
+         * Prüfung des Executor-Watchdogs, wie sie im Betrieb sein eigener Thread ausführt; die Welt ruft sie während
+         * eines simulierten Hängers ({@link #stallController}) regelmäßig auf. Standard: keine Prüfung.
+         */
+        default void watchdogCheck() { }
+
+        /** Simulierter interner Fehler in der Steuerung ({@link SimFaultScript}, „interner-fehler“). */
+        default void injectInternalError(String what) {
+            throw new UnsupportedOperationException("Steuerung unterstützt keinen simulierten internen Fehler");
+        }
     }
+
+    /** Abstand der Watchdog-Prüfungen während eines simulierten Hängers. */
+    private static final long STALL_CHECK_NANOS = 10_000_000L;
+    private long stalledUntil = Long.MIN_VALUE;
+    private Controller current;
 
     /** Empfänger der Melderereignisse (die simulierte Zentrale). */
     @FunctionalInterface
@@ -126,8 +142,22 @@ public final class SimWorld {
      * @return true, wenn {@code done} erfüllt wurde
      */
     public boolean run(Controller controller, BooleanSupplier done, long untilNanos) {
-        controller.pump();
+        current = controller;
+        if (now() >= stalledUntil) controller.pump();
         while (!done.getAsBoolean()) {
+            if (now() < stalledUntil) {
+                // Hänger: die Welt läuft weiter, die Steuerung rechnet nicht; nur der Watchdog prüft
+                long t = Math.min(Math.min(nextEventNanos(), stalledUntil), now() + STALL_CHECK_NANOS);
+                if (t > untilNanos) {
+                    advanceTo(untilNanos);
+                    controller.watchdogCheck();
+                    return done.getAsBoolean();
+                }
+                advanceTo(Math.max(t, now()));
+                controller.watchdogCheck();
+                if (now() >= stalledUntil) controller.pump();
+                continue;
+            }
             long t = Math.min(nextEventNanos(), controller.nextDueNanos());
             if (t > untilNanos) {
                 advanceTo(untilNanos);
@@ -138,6 +168,20 @@ public final class SimWorld {
             controller.pump();
         }
         return true;
+    }
+
+    /**
+     * Simulierter Hänger der Steuerung (Takt überschritten): ab jetzt {@code millis} lang wird die Steuerung nicht
+     * angetrieben, die Welt läuft weiter, der Watchdog prüft ({@link Controller#watchdogCheck}).
+     */
+    public void stallController(long millis) {
+        stalledUntil = Math.max(stalledUntil, now() + millis * 1_000_000L);
+    }
+
+    /** Simulierter interner Fehler in der Steuerung, die gerade angetrieben wird ({@link #run}). */
+    public void injectInternalError(String what) {
+        if (current == null) throw new IllegalStateException("Keine Steuerung angetrieben");
+        current.injectInternalError(what);
     }
 
     private void checkCrossings() {

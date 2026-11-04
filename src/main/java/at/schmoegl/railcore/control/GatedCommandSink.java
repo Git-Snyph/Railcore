@@ -13,16 +13,17 @@ import at.schmoegl.railcore.diag.Journal;
  * tatsächlichen Senden erneut ({@link CommandRules}).
  * <p>
  * Bewegung braucht zusätzlich eine Reservierung (Grundsatz 2). Solange es keine Reservierungsverwaltung gibt,
- * verweigert {@link MovementAuthority#NONE} jede Bewegung.
+ * verweigert {@link MovementAuthority#NONE} jede Bewegung. Ein nach Kurzschluss gekennzeichneter Zug
+ * ({@link TrainCaution#POWER_FAULT}) darf nur noch bremsen und halten.
  */
 final class GatedCommandSink implements CommandSink {
 
     private final ThreadGuard guard;
     private final CommandRules rules;
     private final Journal journal;
-    private final CommandSink target;
+    private final CommandScheduler target;
 
-    GatedCommandSink(ThreadGuard guard, CommandRules rules, Journal journal, CommandSink target) {
+    GatedCommandSink(ThreadGuard guard, CommandRules rules, Journal journal, CommandScheduler target) {
         this.guard = guard;
         this.rules = rules;
         this.journal = journal;
@@ -35,6 +36,11 @@ final class GatedCommandSink implements CommandSink {
         guard.check("Fahrbefehl");
         if (speedStep > 0) {
             String why = rules.movementBlocked(address);
+            if (why == null) {
+                var sent = target.sentDrive(address);
+                why = rules.increaseBlocked(address, speedStep, direction, sent.map(CommandScheduler.SentDrive::step).orElse(0),
+                        sent.map(CommandScheduler.SentDrive::direction).orElse(null));
+            }
             if (why != null) return reject("Fahrbefehl Lok " + address + " Stufe " + speedStep, why);
         }
         return target.drive(address, speedStep, steps, direction, priority, listener);
@@ -54,6 +60,23 @@ final class GatedCommandSink implements CommandSink {
         String why = rules.queryBlocked();
         if (why != null) return reject("Abfrage Lok " + address, why);
         return target.requestLocoState(address, priority);
+    }
+
+    @Override
+    public boolean requestDetectorStatus(CommandPriority priority) {
+        guard.check("Melderabfrage");
+        String why = rules.queryBlocked();
+        if (why == null) why = rules.detectorQueryUnsupported();
+        if (why != null) return reject("Melderabfrage", why);
+        return target.requestDetectorStatus(priority);
+    }
+
+    @Override
+    public boolean refreshStationState(CommandPriority priority) {
+        guard.check("Zustände neu einlesen");
+        String why = rules.queryBlocked();
+        if (why != null) return reject("Zustände neu einlesen", why);
+        return target.refreshStationState(priority);
     }
 
     @Override

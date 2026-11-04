@@ -44,6 +44,7 @@ public final class ExecutorWatchdog {
                 executor.markStalled(true);
                 executor.emergencyStop("watchdog", why);
                 executor.reportFault("watchdog", why);
+                executor.diagnosticReport("Takt überschritten: " + why, null);   // Lastenheft 7, „Interner Fehler“
             }
         } else if (tripped) {
             tripped = false;

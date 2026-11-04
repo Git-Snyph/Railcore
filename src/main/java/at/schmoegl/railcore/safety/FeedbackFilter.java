@@ -32,16 +32,30 @@ public final class FeedbackFilter {
     private final long releaseDelayNanos;
     private final int flickerWarnThreshold;
     private final Consumer<Event> out;
+    private final FlickerListener flicker;
     private final Map<Integer, Boolean> stable = new HashMap<>();
     private final Map<Integer, Long> pendingRelease = new HashMap<>();
     private final Map<Integer, Stats> stats = new HashMap<>();
 
+    /** Meldung je gezähltem Flacker-Wechsel (für die Diagnose); läuft im Thread, der {@link #raw} aufruft. */
+    @FunctionalInterface
+    public interface FlickerListener {
+        /** @param warned true, wenn der Schwellwert erreicht oder überschritten ist */
+        void onFlicker(int contact, int count, boolean warned);
+    }
+
     public FeedbackFilter(TimeSource clock, Journal journal, long releaseDelayMs, int flickerWarnThreshold, Consumer<Event> out) {
+        this(clock, journal, releaseDelayMs, flickerWarnThreshold, out, (c, n, w) -> { });
+    }
+
+    public FeedbackFilter(TimeSource clock, Journal journal, long releaseDelayMs, int flickerWarnThreshold, Consumer<Event> out,
+                          FlickerListener flicker) {
         this.clock = clock;
         this.journal = journal;
         this.releaseDelayNanos = releaseDelayMs * 1_000_000;
         this.flickerWarnThreshold = flickerWarnThreshold;
         this.out = out;
+        this.flicker = java.util.Objects.requireNonNull(flicker);
     }
 
     public synchronized void raw(int contact, boolean occupied, long ts) {
@@ -53,6 +67,7 @@ public final class FeedbackFilter {
                 st.flickerCount++;
                 if (st.flickerCount == flickerWarnThreshold || st.flickerCount % (flickerWarnThreshold * 10) == 0)
                     journal.warn("melder", "SENSOR_FLICKER", "Rückmelder " + Contacts.format(contact) + " flackert (" + st.flickerCount + "×) – Kontakt/Radschleifer prüfen");
+                flicker.onFlicker(contact, st.flickerCount, st.flickerCount >= flickerWarnThreshold);
                 return;  // war noch nicht als frei gemeldet → bleibt belegt
             }
             if (!Boolean.TRUE.equals(current)) {
@@ -98,5 +113,15 @@ public final class FeedbackFilter {
     public synchronized void reset() {
         stable.clear();
         pendingRelease.clear();
+    }
+
+    /**
+     * Einen Melder vergessen (wieder „unbekannt“), z. B. nach Ausfall seiner Versorgung: Eine anstehende Freimeldung
+     * entfällt, die nächste Meldung erscheint als Änderung, unbekannt → frei erst nach der Freimeldeverzögerung.
+     * Die Flacker-Statistik bleibt erhalten.
+     */
+    public synchronized void forget(int contact) {
+        stable.remove(contact);
+        pendingRelease.remove(contact);
     }
 }

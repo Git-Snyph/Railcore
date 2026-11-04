@@ -60,8 +60,17 @@ public final class ControlRuntime implements AutoCloseable {
     public static ControlRuntime create(ControlConfig control, SchedulerConfig scheduler, HandControllerConfig hand,
                                         TimeSource clock, Journal journal, CommandStation station,
                                         Collection<Integer> knownContacts, MovementAuthority authority) {
+        return create(control, scheduler, SupervisionConfig.defaults(), hand, clock, journal, station, knownContacts, authority);
+    }
+
+    /** Wie oben, mit eigenen Einstellungen der Überwachungen (Melder, Lokmeldungen). */
+    public static ControlRuntime create(ControlConfig control, SchedulerConfig scheduler, SupervisionConfig supervision,
+                                        HandControllerConfig hand, TimeSource clock, Journal journal,
+                                        CommandStation station, Collection<Integer> knownContacts,
+                                        MovementAuthority authority) {
         Objects.requireNonNull(hand);
-        ControlExecutor ex = ControlExecutor.create(control, scheduler, clock, journal, station, knownContacts, authority);
+        ControlExecutor ex = ControlExecutor.create(control, scheduler, supervision, clock, journal, station, knownContacts,
+                authority);
         HandControllerPoller poller = new HandControllerPoller(ex, hand);
         ex.enableEmergencyStopOnFirstConnect();   // Entscheidung 33 (2)
         ex.enqueue("Handregler-Abfrage einrichten", poller::install);
