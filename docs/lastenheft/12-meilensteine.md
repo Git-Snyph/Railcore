@@ -22,7 +22,7 @@ Die Sicherheitsbasis liegt in Meilenstein 1, Reservierung und Verriegelung in 4,
 
 | Risiko | Klärung |
 | --- | --- |
-| Zugbeeinflussung mit WLAN-Maus | Stellvertreter-Adresse am Z21-Prüfprogramm testen (Meilenstein 1) |
+| Zugbeeinflussung mit WLAN-Maus | WLAN-Maus über den RailCore-LAN-Server an der echten Maus testen (Entscheidung 21); Stellvertreter-Adresse nur noch für Handregler an der Z21 |
 | Physische Weichenlage und Zugschluss | entschieden: Lagekontakte und Widerstandsachsen optional; Weichen in Grundstellung beim Verbinden, Zugschluss aus gepflegten Längen mit Sicherheitszuschlag (Meilenstein 2 und 4) |
 | Reaktionszeiten und Fehlerverhalten | Messung mit Perzentilen an echter Z21, Fehlerkatalog im Simulator (Meilenstein 1 und 4) |
 
