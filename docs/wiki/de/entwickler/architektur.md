@@ -19,7 +19,7 @@ Kurzüberblick für Entwickler. Maßgeblich sind Lastenheft Kapitel 2 (`docs/las
 | --- | --- |
 | `core` | Schnittstelle `CommandStation`, Lokzustand, Richtung, Melderkontakte |
 | `z21` | Z21-Adapter: Protokoll, Nachrichten; `z21.check` ist das Prüfprogramm |
-| `control` | Steuerungs-Executor, Anlagenzustand und Momentaufnahme, Executor-Watchdog, Freigabe (`MovementAuthority`) |
+| `control` | Steuerungs-Executor, Anlagenzustand und Momentaufnahme, Executor-Watchdog, Freigabe (`MovementAuthority`), Befehlsplaner (`CommandScheduler`, siehe [Befehlsplaner](befehlsplaner.md)), Zugsteuerung (`TrainDriver`) |
 | `train` | Fahrdynamik, Bremskurve, Positionsrechnung und -unsicherheit, Halteplanung |
 | `layout` | Gleisplan-Modell: Blöcke, Ausgänge, Licht, Laden aus Datei |
 | `safety` | Betriebszustand, Melderzustand (unbekannt/frei/belegt), Melderfilter, Kommunikations-Watchdog |

@@ -18,7 +18,7 @@ Nachschlagewissen zu RailCore. Die Schritt-für-Schritt-Anleitung steht unter [A
 | [Architektur](entwickler/architektur.md) | Entwurf |
 | [Bauen und Testen](entwickler/bauen-und-testen.md) | Entwurf |
 | [Simulator](entwickler/simulator.md) | Entwurf |
-| [Befehlsplaner](entwickler/befehlsplaner.md) | geplant (folgt mit PR #20) |
+| [Befehlsplaner](entwickler/befehlsplaner.md) | Entwurf |
 | [Mitarbeiten](entwickler/beitragen.md) | Entwurf |
 
 ## Allgemein
