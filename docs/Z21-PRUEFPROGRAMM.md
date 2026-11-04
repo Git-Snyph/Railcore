@@ -67,3 +67,8 @@ Jeder Eingriff wird im Klartext angekündigt und nur nach der Eingabe `JA` (Gro�
 - Modul 14/2 war belegt (1000 und 8888), die letzte RailCom-Meldung des Abschnitts aber leer. Für den Betrieb ist „belegt, Adresse unbekannt“ ein eigener Zustand; er gilt nie als frei und nie als bestimmter Zug.
 - Sechster Lauf (60 s): WLAN-Maus an der Z21 auf Stellvertreter-Adresse 9001 gefahren. Das Prüfprogramm hatte 9001 zu Beginn per Lokinfo abgefragt (Einzel-Abo). **Trotzdem keine Lokmeldung**, Verbindung dabei einwandfrei (Status, Systemzustand und CAN-Meldungen laufend). Die Z21 meldet also auch abonnierte Adressen nicht, wenn ein Handregler sie fährt.
 - Folge: Das Stellvertreter-Konzept für Handregler an der Z21 funktioniert nicht über Meldungen der Z21. Das Prüfprogramm fragt die Stellvertreter-Adresse deshalb jetzt regelmäßig ab; ein weiterer Lauf mit der WLAN-Maus auf 9001 soll zeigen, ob die Antwort den Zustand des Handreglers enthält und mit welcher Verzögerung.
+
+### 04.11.2026 – siebter Lauf (WLAN-Maus auf 9001, Abfrage alle 250 ms)
+- **Abfrage funktioniert:** 240 von 240 Lokinfo-Abfragen beantwortet. Jede Änderung der Maus war in der nächsten Antwort sichtbar: Fahrstufe 1–10 und zurück in beiden Richtungen, Richtungswechsel, F0 ein/aus. Verzögerung höchstens Abfrageabstand (250 ms) plus Antwortzeit.
+- Ohne eigene Abfrage kam wieder keine Lokmeldung.
+- **Geklärt:** Handregler an der Z21 auf einer Stellvertreter-Adresse lassen sich durch regelmäßiges Abfragen verfolgen; Einzel-Abo und Lok-Broadcast liefern dafür nichts. Offen: Rückschreiben des begrenzten Werts auf die Anzeige des Handreglers (aktive Prüfung) und die Last bei mehreren Stellvertreter-Adressen.
