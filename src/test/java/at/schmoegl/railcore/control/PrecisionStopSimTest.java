@@ -82,7 +82,9 @@ public class PrecisionStopSimTest {
         final DriveOrder order;
         TrainDriver driver;
 
-        Run(long seed, Scenario sc) {
+        Run(long seed, Scenario sc) { this(seed, sc, SchedulerConfig.defaults()); }
+
+        Run(long seed, Scenario sc, SchedulerConfig schedulerConfig) {
             Random rnd = SimWorld.randomForRun(seed);
             world = new SimWorld(clock, rnd);
             station = new SimCommandStation(world, Distribution.uniform(20, 50), 200);
@@ -99,7 +101,7 @@ public class PrecisionStopSimTest {
                             Distribution.normal(0, 3, -12, 12)));
             }
             double trueStart = Distribution.normal(0, 5, -20, 20).sample(rnd);
-            ex = ControlExecutor.create(ControlConfig.defaults(), clock, journal, station,
+            ex = ControlExecutor.create(ControlConfig.defaults(), schedulerConfig, clock, journal, station,
                     List.of(CONTACT), address -> address == 3);   // Platzhalter für die Reservierung
             controller = new SimWorld.Controller() {
                 @Override public long nextDueNanos() { return ex.nextDueNanos(); }
