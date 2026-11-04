@@ -38,6 +38,14 @@ Jeder Eingriff wird im Klartext angekündigt und nur nach der Eingabe `JA` (Gro�
 - Ergebnisse ohne Rückmeldung stehen als „unbekannt“, nie als in Ordnung. Punkte mit „an Hardware zu prüfen“ sind in ihrer Deutung nicht gesichert.
 - Wird das Programm hart beendet (z. B. Fenster geschlossen, Gradle-Abbruch), läuft der Shutdown-Hook unter Umständen nicht. Die Z21 sendet dann die letzte Fahrstufe an die Stellvertreter-Adresse weiter – deshalb Fahrstufe klein halten und auf dieser Adresse keinen Decoder betreiben.
 
+## Zusammenfassung – geklärt und offen
+
+**Geklärt:** RailCom-Richtungsbits des 10808 zeigen die Aufgleisrichtung der Lok, nicht die Fahrtrichtung; die Z21 sendet trotz Abo keinen Lok-Broadcast bei Fremdsteuerung; Handregler auf Stellvertreter-Adresse per Abfrage lesbar (Verzögerung höchstens Abfrageabstand), Rückschreiben auf die Anzeige möglich; Weichenlage nach RCN-213 (P=1 gerade, P=0 abzweigend) und 10836-Adressierung bestätigt; POM-Lesen am Zubehördecoder über Decoderadresse (Weiche − 1) / 4; die Z21 bestätigt eigene Fahrbefehle mit einer Lokmeldung; Antwortzeiten 1–22 ms.
+
+**Noch offen, an Hardware zu prüfen:** R-Bus-Modulzählung (Versatz um ein Modul, R-Bus wird deshalb nicht genutzt), genaue Antwortzeit des Echos auf Fahrbefehle (Grundlage für die Budget-Nachführung, Entscheidung 27), Zusammenspiel der WLAN-Maus mit dem RailCore-LAN-Server (noch nicht gebaut).
+
+Details und Rohdaten je Lauf siehe unten.
+
 ## Ergebnisse an der Anlage
 
 ### 04.11.2026 – erster passiver Lauf
