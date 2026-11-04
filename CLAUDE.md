@@ -4,8 +4,9 @@ RailCore ist eine eigene Modellbahn-Steuerung (Java 25, Desktop) für eine Roco 
 Ziel: bis zu 100 Züge vollautomatisch, wegbasiert und sicher fahren, mit Handbetrieb unter Zugbeeinflussung.
 
 Maßgebliche Unterlagen:
-- Technisches Lastenheft: „RailCore – Technisches Lastenheft“ (claude.ai: https://claude.ai/artifact/EZJSUZJ3T2DzCGpGTZfaDM)
-- `docs/lastenheft/` – Lastenheft als Kapitel-Dateien; nur das für die Aufgabe nötige Kapitel lesen (Inhaltsverzeichnis in README.md). Maßgeblich bleibt das Dokument in claude.ai.
+- `docs/lastenheft/` – **maßgebliche Fassung** des technischen Lastenhefts als Kapitel-Dateien; nur das für die Aufgabe nötige Kapitel lesen (Inhaltsverzeichnis in README.md).
+- Lesbare Fassung mit Diagrammen: Dokument „RailCore – Technisches Lastenheft“ in claude.ai (https://claude.ai/artifact/EZJSUZJ3T2DzCGpGTZfaDM).
+- Jede Änderung am Lastenheft zuerst in docs/lastenheft/, danach im claude.ai-Dokument nachziehen (Entscheidung 25).
 - `docs/ENTSCHEIDUNGEN.md` – Entscheidungsprotokoll. Vor jeder Architekturänderung lesen; neue Entscheidungen oben eintragen.
 - `docs/FEATURES.md` – Anforderungsübersicht
 

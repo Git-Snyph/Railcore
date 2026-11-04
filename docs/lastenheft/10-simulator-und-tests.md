@@ -1,6 +1,6 @@
 # 10. Simulator und Tests
 
-> Quelle: Dokument „RailCore – Technisches Lastenheft“ in claude.ai (https://claude.ai/artifact/EZJSUZJ3T2DzCGpGTZfaDM), Stand 03.11.2026. Maßgeblich ist das Dokument in claude.ai; Änderungen dort planen und hier nachziehen.
+> Maßgebliche Fassung des Lastenhefts. Lesbare Fassung mit Diagrammen: Dokument „RailCore – Technisches Lastenheft“ in claude.ai (https://claude.ai/artifact/EZJSUZJ3T2DzCGpGTZfaDM), wird nach jeder Änderung hier nachgezogen.
 
 Der Simulator ist ein vollwertiger Adapter: Er bildet Zentrale, Booster, Melder, RailCom, Weichen und Signale nach und bewegt Züge mit eigenen, absichtlich vom eingemessenen Profil abweichenden „wahren“ Profilen. So muss die Positionsrechnung auch im Test korrigieren.
 
