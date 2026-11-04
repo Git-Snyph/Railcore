@@ -72,6 +72,13 @@ Logo: `docs/bilder/railcore-logo.png`. Programmsymbol: `docs/bilder/railcore-ico
 - Ist eine ganze Sitzung überwiegend Kernlogik, dem Nutzer zu Beginn empfehlen, die Sitzung auf Opus umzustellen.
 - Für Kernaufgaben mit Hardwarezugriff die Hauptsitzung auf Opus umstellen statt railcore-kern zu verwenden. Agenten nur für Aufgaben, bei denen das Ergebnis zählt (Tests, Doku, Aufräumen, reine Simulator-Logik).
 
+## Entscheidungen
+
+- **Grundsätzliche Entscheidungen trifft immer der Nutzer:** Architektur, Sicherheit, Hardwarezugriff, neue Bibliotheken, Datenformate und jede Abweichung von CLAUDE.md oder Lastenheft. Vorher 2–3 Optionen mit Empfehlung vorlegen und erst nach Zustimmung umsetzen.
+- Umsetzungsdetails innerhalb der Regeln entscheidet Claude Code selbst und begründet sie in der Commit-Nachricht.
+- Im Zweifel fragen.
+- In `docs/ENTSCHEIDUNGEN.md` nur Einträge mit Freigabe des Nutzers (Spalte „Freigegeben“); Einträge ohne belegte Freigabe stehen auf „offen – bitte bestätigen“.
+
 ## Commits
 
 - Kleine, in sich geschlossene Commits mit deutscher Nachricht (erste Zeile = was und warum).
