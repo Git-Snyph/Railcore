@@ -23,7 +23,7 @@ Wird die Freigabe während der Fahrt verlängert, wechselt ein bremsender Zug zu
 
 | Modell | Zustände | Wichtigste Regel |
 | --- | --- | --- |
-| Anlage | Initialisierung (Hardware prüfen, Zustände einlesen), Aufbau (Gleisplan bearbeiten, kein Fahrbetrieb), Bereit, Handbetrieb, Automatik, Automatik endet, Störung/Nothalt (Fahrfreigaben entziehen, Zustand sichern), Wiederanlauf/Quittierung | Automatik-Fahrbefehle nur in „Automatik“; Wechsel nur über festgelegte Übergänge, nie von Störung direkt in Automatik, sondern über Wiederanlauf, Ursachenprüfung und eigene Freigabe nach Nothalt |
+| Anlage | Initialisierung (Hardware prüfen, Zustände einlesen), Aufbau (Gleisplan bearbeiten, kein Fahrbetrieb), Bereit, Handbetrieb, Automatik, Automatik endet, Störung/Nothalt (Fahrfreigaben entziehen, Zustand sichern), Wiederanlauf/Quittierung | Automatik-Fahrbefehle nur in „Automatik“; Wechsel nur über festgelegte Übergänge, nie von Störung direkt in Automatik, sondern über Wiederanlauf, Ursachenprüfung und eigene Freigabe nach Nothalt; beim ersten Verbinden nach dem Programmstart geht die Anlage direkt von Initialisierung in Nothalt mit dem Grund „Programmstart“, nicht in Störung (Entscheidung 34) |
 | Meldeabschnitt | frei, belegt, unbekannt, gesperrt (verdächtig oder Handsperre) | „unbekannt“ nach Start und Verbindungsverlust, wird wie belegt behandelt |
 | Reservierung | angefragt, gewährt, aktiv (Zug darin), teilweise freigegeben, freigegeben | Freigabe erst nach vollständigem Verlassen und Freimeldung |
 | Zug | siehe Bild | Bewegung nur nach „Reserviert“, Nothalt und Fehler aus jedem Zustand |
