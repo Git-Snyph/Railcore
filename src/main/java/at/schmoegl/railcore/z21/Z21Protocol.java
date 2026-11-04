@@ -101,11 +101,12 @@ public final class Z21Protocol {
     /**
      * LAN_X_SET_TURNOUT. address ab 1 (wie auf dem Handregler); auf dem Draht 0-basiert.
      * activate=true schaltet den Ausgang ein, danach muss er mit activate=false wieder abgeschaltet werden.
+     * Lage nach RCN-213: P=1 gerade, P=0 abzweigend (an Hardware bestätigt, siehe {@link TurnoutPosition}).
      */
     public static byte[] setTurnout(int address, TurnoutPosition pos, boolean activate) {
         if (pos == TurnoutPosition.UNKNOWN) throw new IllegalArgumentException("Weichenlage UNKNOWN nicht schaltbar");
         int a = address - 1;
-        int db2 = 0x80 | (activate ? 0x08 : 0) | (pos == TurnoutPosition.DIVERGING ? 1 : 0);
+        int db2 = 0x80 | (activate ? 0x08 : 0) | (pos == TurnoutPosition.STRAIGHT ? 1 : 0);
         return x(0x53, (a >> 8) & 0xFF, a & 0xFF, db2);
     }
 
@@ -256,8 +257,8 @@ public final class Z21Protocol {
         if (xh == 0x43 && d.length >= 5) {
             int addr = (((d[1] & 0xFF) << 8) | (d[2] & 0xFF)) + 1;
             TurnoutPosition p = switch (d[3] & 0x03) {
-                case 1 -> TurnoutPosition.STRAIGHT;
-                case 2 -> TurnoutPosition.DIVERGING;
+                case 1 -> TurnoutPosition.DIVERGING;   // ZZ=01: zuletzt P=0
+                case 2 -> TurnoutPosition.STRAIGHT;    // ZZ=10: zuletzt P=1
                 default -> TurnoutPosition.UNKNOWN;
             };
             return new Z21Message.Turnout(addr, p);

@@ -14,10 +14,11 @@ public class Z21CheckTest {
 
     static final String POWER_ON = "07 00 40 00 21 81 A0";
     static final String POWER_OFF = "07 00 40 00 21 80 A1";
-    static final String TURNOUT_DIV_ON = "09 00 40 00 53 00 00 89 DA";
-    static final String TURNOUT_DIV_OFF = "09 00 40 00 53 00 00 81 D2";
-    static final String TURNOUT_STR_ON = "09 00 40 00 53 00 00 88 DB";
-    static final String TURNOUT_STR_OFF = "09 00 40 00 53 00 00 80 D3";
+    // RCN-213: P=0 abzweigend, P=1 gerade (an Hardware bestätigt)
+    static final String TURNOUT_DIV_ON = "09 00 40 00 53 00 00 88 DB";
+    static final String TURNOUT_DIV_OFF = "09 00 40 00 53 00 00 80 D3";
+    static final String TURNOUT_STR_ON = "09 00 40 00 53 00 00 89 DA";
+    static final String TURNOUT_STR_OFF = "09 00 40 00 53 00 00 81 D2";
     static final String DRIVE_9001_STEP1 = "0A 00 40 00 E4 13 E3 29 82 BF";
     static final String HALT_9001 = "0A 00 40 00 E4 13 E3 29 80 BD";
     static final String ESTOP_9001 = "0A 00 40 00 E4 13 E3 29 81 BC";

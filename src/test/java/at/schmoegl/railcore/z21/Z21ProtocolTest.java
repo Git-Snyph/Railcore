@@ -37,6 +37,15 @@ public class Z21ProtocolTest {
         assertEquals("07 00 C4 00 00 00 D0", Z21Protocol.hex(Z21Protocol.canDetectorRequest(Z21Protocol.CAN_ALL)));
     }
 
+    public void testTurnoutInfoRcn213() {
+        // LAN_X_TURNOUT_INFO Adresse 15 (Draht 14): ZZ=01 = zuletzt P=0 = abzweigend, ZZ=10 = P=1 = gerade
+        var d = (Z21Message.Turnout) one("09 00 40 00 43 00 0E 01 4C");
+        assertEquals(15, d.address());
+        assertEquals(TurnoutPosition.DIVERGING, d.position());
+        assertEquals(TurnoutPosition.STRAIGHT, ((Z21Message.Turnout) one("09 00 40 00 43 00 0E 02 4F")).position());
+        assertEquals(TurnoutPosition.UNKNOWN, ((Z21Message.Turnout) one("09 00 40 00 43 00 0E 00 4D")).position());
+    }
+
     public void testXBusRequests() {
         assertEquals("07 00 40 00 21 21 00", Z21Protocol.hex(Z21Protocol.getVersion()));
         assertEquals("07 00 40 00 21 24 05", Z21Protocol.hex(Z21Protocol.getStatus()));
@@ -48,8 +57,11 @@ public class Z21ProtocolTest {
         // 9001 = 0x2329, lange Adresse: MSB | 0xC0
         assertEquals("09 00 40 00 E3 F0 E3 29 D9", Z21Protocol.hex(Z21Protocol.getLocoInfo(9001)));
         assertEquals("08 00 40 00 43 00 00 43", Z21Protocol.hex(Z21Protocol.getTurnoutInfo(1)));
-        assertEquals("09 00 40 00 53 00 00 89 DA", Z21Protocol.hex(Z21Protocol.setTurnout(1, TurnoutPosition.DIVERGING, true)));
-        assertEquals("09 00 40 00 53 00 00 81 D2", Z21Protocol.hex(Z21Protocol.setTurnout(1, TurnoutPosition.DIVERGING, false)));
+        // RCN-213: P=1 gerade, P=0 abzweigend – an der echten Z21 mit 10836 bestätigt (Weiche 15, 04.11.2026)
+        assertEquals("09 00 40 00 53 00 00 89 DA", Z21Protocol.hex(Z21Protocol.setTurnout(1, TurnoutPosition.STRAIGHT, true)));
+        assertEquals("09 00 40 00 53 00 00 81 D2", Z21Protocol.hex(Z21Protocol.setTurnout(1, TurnoutPosition.STRAIGHT, false)));
+        assertEquals("09 00 40 00 53 00 0E 88 D5", Z21Protocol.hex(Z21Protocol.setTurnout(15, TurnoutPosition.DIVERGING, true)));
+        assertEquals("09 00 40 00 53 00 0E 80 DD", Z21Protocol.hex(Z21Protocol.setTurnout(15, TurnoutPosition.DIVERGING, false)));
         assertEquals("0A 00 40 00 E4 13 E3 29 81 BC",
                 Z21Protocol.hex(Z21Protocol.emergencyStopLoco(9001, SpeedSteps.S128, Direction.FORWARD)));
         // Fahrstufe 1 bei 128 Fahrstufen wird als 2 übertragen (1 = Nothalt)
