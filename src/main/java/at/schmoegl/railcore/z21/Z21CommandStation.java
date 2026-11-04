@@ -178,6 +178,7 @@ public class Z21CommandStation extends AbstractCommandStation {
 
     private void handle(Z21Message m, long now) {
         switch (m) {
+            case Z21Message.Diagnostic _ -> { } // nur für das Prüfprogramm bzw. die Fähigkeitserkennung
             case Z21Message.PowerState p -> fire(l -> l.onTrackPower(p.state()));
             case Z21Message.Loco lo -> fire(l -> l.onLocoState(lo.state()));
             case Z21Message.Turnout t -> fire(l -> l.onTurnoutPosition(t.address(), t.position()));

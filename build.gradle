@@ -36,3 +36,15 @@ tasks.named('test') { enabled = false }
 jar {
     manifest { attributes 'Main-Class': application.mainClass }
 }
+
+// Z21-Prüfprogramm (Standard passiv, nur lesen). Beispiel:
+//   gradlew z21Check --console=plain --args="--host 192.168.0.111 --dauer 60"
+//   gradlew z21Check --console=plain --args="--host 192.168.0.111 --stufe aktiv"
+tasks.register('z21Check', JavaExec) {
+    group = 'application'
+    description = 'Z21-Prüfprogramm: Fähigkeiten erkennen, offene Hardware-Fragen klären (--args="--hilfe").'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'at.schmoegl.railcore.z21.check.Z21CheckMain'
+    standardInput = System.in
+    workingDir = rootDir
+}
