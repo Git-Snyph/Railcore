@@ -27,8 +27,15 @@ public final class CommunicationWatchdog {
         this.lastAlive = clock.nanoTime();
     }
 
-    public void alive() {
-        long now = clock.nanoTime();
+    public void alive() { alive(clock.nanoTime()); }
+
+    /**
+     * Lebenszeichen mit Empfangszeitpunkt. Der Zeitpunkt wird auf „jetzt“ begrenzt, damit ein Zeitstempel aus
+     * einer fremden Zeitbasis die Überwachung nie verlängern kann; Zeitpunkte vor dem letzten Lebenszeichen zählen
+     * nicht zurück.
+     */
+    public void alive(long timestampNanos) {
+        long now = Math.max(lastAlive, Math.min(timestampNanos, clock.nanoTime()));
         long gap = now - lastAlive;
         lastAlive = now;
         synchronized (this) { if (gap > maxGapNanos) maxGapNanos = gap; }
