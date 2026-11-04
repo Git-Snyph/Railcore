@@ -21,6 +21,12 @@ public final class SpeedProfile {
     private double accelMmS2;
     private double decelMmS2;
     private boolean calibrated;
+    /** Annäherungstempo am Bahnsteig, Vorbild-km/h (Entscheidung 24, Standard 5 km/h). */
+    private double approachSpeedKmh = 5.0;
+    /** Auslaufweg nach Fahrstufe 0 aus dem Annäherungstempo (Mittel, Streuung) – Vorgabe bis zum Einmessen. */
+    private double stopRunoutMm = 2.0;
+    private double stopRunoutSigmaMm = 1.0;
+    private PositionUncertainty uncertainty = PositionUncertainty.startValues();
 
     public SpeedProfile(SpeedSteps steps) {
         this.steps = steps;
@@ -59,6 +65,31 @@ public final class SpeedProfile {
     public boolean isCalibrated() { return calibrated; }
 
     public void setCalibrated(boolean c) { this.calibrated = c; }
+
+    public double approachSpeedKmh() { return approachSpeedKmh; }
+
+    /** Annäherungstempo am Bahnsteig (Vorbild-km/h), je Zugprofil einstellbar. */
+    public void setApproachSpeedKmh(double kmh) {
+        if (!(kmh > 0 && kmh <= 40)) throw new IllegalArgumentException("Annäherungstempo unplausibel: " + kmh + " km/h");
+        this.approachSpeedKmh = kmh;
+    }
+
+    public double stopRunoutMm() { return stopRunoutMm; }
+
+    public double stopRunoutSigmaMm() { return stopRunoutSigmaMm; }
+
+    /** Eingemessener Auslaufweg nach Fahrstufe 0 aus dem Annäherungstempo (Mittel und Streuung). */
+    public void setStopRunout(double meanMm, double sigmaMm) {
+        if (!(meanMm >= 0 && meanMm <= 200 && sigmaMm >= 0 && sigmaMm <= 200))
+            throw new IllegalArgumentException("Auslaufweg unplausibel: " + meanMm + " ± " + sigmaMm + " mm");
+        this.stopRunoutMm = meanMm;
+        this.stopRunoutSigmaMm = sigmaMm;
+    }
+
+    /** Parameter der Positionsunsicherheit dieses Zuges (Startwerte bis zu echten Messungen). */
+    public PositionUncertainty uncertainty() { return uncertainty; }
+
+    public void setUncertainty(PositionUncertainty u) { this.uncertainty = java.util.Objects.requireNonNull(u); }
 
     public void set(Direction dir, int step, double mmPerSec) { table(dir)[step] = mmPerSec; }
 
@@ -106,6 +137,10 @@ public final class SpeedProfile {
         p.accelMmS2 = accelMmS2;
         p.decelMmS2 = decelMmS2;
         p.calibrated = calibrated;
+        p.approachSpeedKmh = approachSpeedKmh;
+        p.stopRunoutMm = stopRunoutMm;
+        p.stopRunoutSigmaMm = stopRunoutSigmaMm;
+        p.uncertainty = uncertainty;
         return p;
     }
 

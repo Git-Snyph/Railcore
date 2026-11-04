@@ -10,8 +10,12 @@ import at.schmoegl.railcore.safety.OperatingState;
 import at.schmoegl.railcore.safety.SensorState;
 import at.schmoegl.railcore.util.TimeSource;
 
+import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Comparator;
+import java.util.List;
 import java.util.Objects;
+import java.util.PriorityQueue;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -21,17 +25,44 @@ import java.util.concurrent.atomic.AtomicLong;
 /**
  * Zentraler Steuerungs-Executor (Entscheidung 4, 23). Genau ein Thread ändert den Anlagenzustand ({@link PlantState});
  * andere Threads (Zentrale, Oberfläche, Watchdog) legen nur Ereignisse und Befehle in die Warteschlange.
- * Der Executor arbeitet sie nacheinander ab und rechnet einen festen Takt (Verbindungsüberwachung,
- * Rückmelder-Entprellung). Nach jedem Schritt veröffentlicht er eine unveränderliche {@link PlantSnapshot}.
+ * Der Executor arbeitet sie <b>sofort</b> nach Eingang ab, nicht erst im nächsten Takt (Entscheidung 24). Der Takt
+ * (konfigurierbar, Standard 50 ms) dient nur zeitabhängigen Aufgaben (Verbindungsüberwachung, Rückmelder-Entprellung,
+ * Bewegungsrechnung über {@link TickTask}); diese erhalten die tatsächlich vergangene Zeit aus der {@link TimeSource},
+ * nie „Takt × n“. Brems- und Haltebefehle werden mit {@link #schedule} auf ihren vorausberechneten Zeitpunkt
+ * eingeplant und dann ausgeführt, unabhängig vom Taktraster. Die Abweichung der Takte und der eingeplanten Befehle
+ * von ihrem Sollzeitpunkt wird gemessen und gedrosselt im Journal berichtet ({@code TICK_JITTER}).
+ * Nach jedem Schritt veröffentlicht der Executor eine unveränderliche {@link PlantSnapshot}.
  * <p>
  * <b>Nothalt</b> ({@link #emergencyStop}) ist aus jedem Thread aufrufbar, sendet sofort an die Zentrale – ohne
  * Warteschlange und ohne auf den Executor zu warten (Grundsatz 7) – und lässt den Executor den Zustand danach
  * vorrangig nachziehen. Er wird nie automatisch aufgehoben, nur durch {@link ControlCommand.AcknowledgeEmergency}.
  * <p>
- * <b>Testbetrieb:</b> {@link #step()}, {@link #processPending()} und {@link #tick()} laufen ohne eigenen Thread; der
- * aufrufende Thread wird beim ersten Aufruf zum Steuerungs-Thread. {@link #start()} legt den echten Thread darüber.
+ * <b>Testbetrieb:</b> {@link #step()}, {@link #processPending()}, {@link #tick()} und {@link #pump()} laufen ohne
+ * eigenen Thread; der aufrufende Thread wird beim ersten Aufruf zum Steuerungs-Thread. {@link #pump()} zusammen mit
+ * {@link #nextDueNanos()} bildet die Steuerschleife für Simulation mit {@code TimeSource.Manual} exakt nach.
+ * {@link #start()} legt den echten Thread darüber.
  */
 public final class ControlExecutor {
+
+    /** Zeitabhängige Aufgabe, die in jedem Takt auf dem Steuerungs-Thread gerechnet wird. */
+    @FunctionalInterface
+    public interface TickTask {
+        /**
+         * @param nowNanos      Zeitpunkt dieses Takts (TimeSource)
+         * @param elapsedNanos  tatsächlich vergangene Zeit seit dem vorigen Takt (nicht die Taktlänge)
+         */
+        void onTick(long nowNanos, long elapsedNanos);
+    }
+
+    /** Beobachter für Rückmelderereignisse (nach der Entprellung), läuft auf dem Steuerungs-Thread. */
+    @FunctionalInterface
+    public interface FeedbackObserver {
+        /** @param timestampNanos Empfangszeitpunkt des Ereignisses (nicht der Verarbeitungszeitpunkt) */
+        void onFeedback(int contact, boolean occupied, long timestampNanos);
+    }
+
+    /** Schutz gegen eine Aufgabe, die sich endlos sofort neu einplant. */
+    private static final int MAX_TIMERS_PER_PASS = 10_000;
 
     private record Task(String label, Runnable action) {}
 
@@ -62,8 +93,23 @@ public final class ControlExecutor {
     private CommunicationWatchdog.Status lastComm = CommunicationWatchdog.Status.OK;
     private Thread thread;
 
+    // ---- Zeitplan und Takt (nur Steuerungs-Thread)
+    private final PriorityQueue<ScheduledAction> timers = new PriorityQueue<>(
+            Comparator.comparingLong(ScheduledAction::dueNanos).thenComparingLong(ScheduledAction::sequence));
+    private long timerSequence;
+    private final List<TickTask> tickTasks = new ArrayList<>();
+    private final List<FeedbackObserver> feedbackObservers = new ArrayList<>();
+    private long nextTickNanos;
+    private long previousTickStartNanos;
+    private final TimingStatistics tickJitter = new TimingStatistics();
+    private final TimingStatistics timerLateness = new TimingStatistics();
+    private long jitterWindowStartNanos;
+    private boolean overrunReportedInWindow;
+    private volatile TimingStatistics.Summary lastTickJitterReport = TimingStatistics.Summary.EMPTY;
+    private volatile TimingStatistics.Summary lastTimerLatenessReport = TimingStatistics.Summary.EMPTY;
+
     private ControlExecutor(ControlConfig config, TimeSource clock, Journal journal, CommandStation station,
-                            CommandSink sink, Collection<Integer> knownContacts) {
+                            CommandSink sink, Collection<Integer> knownContacts, MovementAuthority authority) {
         this.config = Objects.requireNonNull(config);
         this.clock = Objects.requireNonNull(clock);
         this.journal = Objects.requireNonNull(journal);
@@ -71,24 +117,37 @@ public final class ControlExecutor {
         this.guard = new ThreadGuard(journal);
         this.plant = new PlantState(guard, journal, knownContacts);
         this.feedback = new FeedbackFilter(clock, journal, config.feedbackReleaseMillis(), config.flickerWarnThreshold(),
-                e -> plant.setSensor(e.contact(), e.occupied() ? SensorState.OCCUPIED : SensorState.FREE));
+                this::onFilteredFeedback);
         this.communication = new CommunicationWatchdog(clock, journal, config.commWarnMillis(), config.commLostMillis());
-        this.commands = new GatedCommandSink(guard, plant, journal, Objects.requireNonNull(sink), GatedCommandSink.MovementAuthority.NONE);
+        this.commands = new GatedCommandSink(guard, plant, journal, Objects.requireNonNull(sink), Objects.requireNonNull(authority));
         this.queue = new LinkedBlockingQueue<>(config.queueCapacity());
         this.watchdog = new ExecutorWatchdog(this, clock, journal, config);
         this.lastTickNanos = clock.nanoTime();
+        this.previousTickStartNanos = lastTickNanos;
+        this.nextTickNanos = lastTickNanos + config.tickNanos();
+        this.jitterWindowStartNanos = lastTickNanos;
         this.snapshot = plant.initialSnapshot(lastTickNanos);
     }
 
     /**
-     * Legt den Executor an und meldet ihn als Listener an der Zentrale an.
+     * Legt den Executor ohne Reservierungsverwaltung an: jede Bewegung wird abgewiesen ({@link MovementAuthority#NONE}).
      *
      * @param sink           Ausgabe der Befehle (später CommandScheduler); der Nothalt geht direkt an {@code station}
      * @param knownContacts  Melder der Anlage; sie starten „unbekannt“
      */
     public static ControlExecutor create(ControlConfig config, TimeSource clock, Journal journal, CommandStation station,
                                          CommandSink sink, Collection<Integer> knownContacts) {
-        ControlExecutor ex = new ControlExecutor(config, clock, journal, station, sink, knownContacts);
+        return create(config, clock, journal, station, sink, knownContacts, MovementAuthority.NONE);
+    }
+
+    /**
+     * Wie {@link #create(ControlConfig, TimeSource, Journal, CommandStation, CommandSink, Collection)}, mit einer
+     * Bewegungsfreigabe (später die Reservierungsverwaltung). Die übrigen Sperren der Befehlsschranke (Nothalt,
+     * Störung, Verbindung, Betriebszustand) bleiben davon unberührt.
+     */
+    public static ControlExecutor create(ControlConfig config, TimeSource clock, Journal journal, CommandStation station,
+                                         CommandSink sink, Collection<Integer> knownContacts, MovementAuthority authority) {
+        ControlExecutor ex = new ControlExecutor(config, clock, journal, station, sink, knownContacts, authority);
         station.addListener(ex.stationListener);
         journal.info("steuerung", "EXECUTOR_CREATED", "Steuerungs-Executor angelegt (Takt " + config.tickMillis()
                 + " ms, Watchdog-Toleranz " + config.watchdogToleranceMillis() + " ms, " + knownContacts.size() + " Melder unbekannt)");
@@ -139,41 +198,108 @@ public final class ControlExecutor {
     /** Befehlsausgabe mit Sicherheitsschranke; nur vom Steuerungs-Thread nutzbar. */
     public CommandSink commands() { return commands; }
 
-    /** Ein vollständiger Schritt: alle anstehenden Ereignisse abarbeiten, dann einen Takt rechnen. */
+    /**
+     * Ein vollständiger Schritt ohne Zeitplan (Testbetrieb): alle anstehenden Ereignisse und fälligen eingeplanten
+     * Aufgaben abarbeiten, dann einen Takt rechnen – unabhängig davon, ob er laut Taktraster fällig ist.
+     */
     public void step() {
         processPending();
+        runDueTimers();
         tick();
+        nextTickNanos = previousTickStartNanos + config.tickNanos();
     }
 
     /** Arbeitet zuerst vorrangige Aufgaben, dann alle zu Beginn anstehenden Ereignisse ab. */
     public void processPending() {
         bindOrCheck();
-        runUrgent();
-        int n = queue.size();
-        for (int i = 0; i < n; i++) {
-            Task t = queue.poll();
-            if (t == null) break;
-            runTask(t);
-            runUrgent();
-        }
+        drainQueue();
         publish();
     }
 
-    /** Ein Rechentakt: Lebenszeichen übernehmen, Verbindung prüfen, Rückmelder entprellen, Momentaufnahme veröffentlichen. */
-    public void tick() {
+    /**
+     * Ein Durchlauf der Steuerschleife (auch Simulation mit {@code TimeSource.Manual}): vorrangige Aufgaben und alle
+     * anstehenden Ereignisse sofort, danach alle fälligen eingeplanten Aufgaben, danach der Takt, falls er laut
+     * Taktraster fällig ist (mit Messung der Taktschwankung).
+     */
+    public void pump() {
         bindOrCheck();
-        try {
-            OperatingState state = plant.operatingState();
-            long hb = latestHeartbeat.getAndSet(NO_HEARTBEAT);
-            if (hb != NO_HEARTBEAT) communication.alive(hb);
-            if (state != OperatingState.OFFLINE) checkCommunication();
-            feedback.poll();
-        } catch (RuntimeException e) {
-            internalError("Takt", e);
-        }
-        lastTickNanos = clock.nanoTime();
+        drainQueue();
+        runDueWork();
         publish();
     }
+
+    /** Nächster Zeitpunkt, zu dem der Executor ohne neues Ereignis etwas zu tun hat (Takt oder eingeplante Aufgabe). */
+    public long nextDueNanos() {
+        guard.check("Zeitplan lesen");
+        ScheduledAction head = peekTimer();
+        return head == null ? nextTickNanos : Math.min(nextTickNanos, head.dueNanos());
+    }
+
+    /** Ein Rechentakt außerhalb des Taktrasters (Testbetrieb); ohne Messung der Taktschwankung. */
+    public void tick() {
+        bindOrCheck();
+        runTick(clock.nanoTime());
+        publish();
+    }
+
+    /**
+     * Plant eine Aufgabe auf einen festen Zeitpunkt ein. Sie läuft auf dem Steuerungs-Thread, sobald der Zeitpunkt
+     * erreicht ist (nicht taktgerastert); liegt er in der Vergangenheit, beim nächsten Durchlauf. Eine Ausnahme in der
+     * Aufgabe führt wie jeder interne Fehler zu Nothalt und Störung.
+     */
+    public ScheduledAction schedule(long dueNanos, String label, Runnable action) {
+        guard.check("Aufgabe einplanen");
+        ScheduledAction a = new ScheduledAction(dueNanos, timerSequence++, Objects.requireNonNull(label), Objects.requireNonNull(action));
+        timers.add(a);
+        return a;
+    }
+
+    /** Zeitabhängige Aufgabe für jeden Takt anmelden. */
+    public void addTickTask(TickTask task) {
+        guard.check("Taktaufgabe anmelden");
+        tickTasks.add(Objects.requireNonNull(task));
+    }
+
+    public void removeTickTask(TickTask task) {
+        guard.check("Taktaufgabe abmelden");
+        tickTasks.remove(task);
+    }
+
+    /** Beobachter für entprellte Rückmelderereignisse anmelden. */
+    public void addFeedbackObserver(FeedbackObserver observer) {
+        guard.check("Rückmelder-Beobachter anmelden");
+        feedbackObservers.add(Objects.requireNonNull(observer));
+    }
+
+    public void removeFeedbackObserver(FeedbackObserver observer) {
+        guard.check("Rückmelder-Beobachter abmelden");
+        feedbackObservers.remove(observer);
+    }
+
+    /** Uhr des Executors (für Planungen auf dem Steuerungs-Thread). */
+    public TimeSource clock() { return clock; }
+
+    public Journal journal() { return journal; }
+
+    public ControlConfig config() { return config; }
+
+    /** Taktschwankung im laufenden Messfenster (nur Steuerungs-Thread). */
+    public TimingStatistics.Summary tickJitter() {
+        guard.check("Taktschwankung lesen");
+        return tickJitter.summary();
+    }
+
+    /** Verspätung eingeplanter Aufgaben im laufenden Messfenster (nur Steuerungs-Thread). */
+    public TimingStatistics.Summary timerLateness() {
+        guard.check("Zeitplan-Verspätung lesen");
+        return timerLateness.summary();
+    }
+
+    /** Zuletzt im Journal berichtete Taktschwankung (aus jedem Thread). */
+    public TimingStatistics.Summary lastTickJitterReport() { return lastTickJitterReport; }
+
+    /** Zuletzt im Journal berichtete Verspätung eingeplanter Aufgaben (aus jedem Thread). */
+    public TimingStatistics.Summary lastTimerLatenessReport() { return lastTimerLatenessReport; }
 
     // ================================================================== Thread-Betrieb
 
@@ -185,8 +311,12 @@ public final class ControlExecutor {
         guard.bind(t);
         thread = t;
         running = true;
-        lastTickNanos = clock.nanoTime();
-        t.start();
+        long now = clock.nanoTime();
+        lastTickNanos = now;
+        previousTickStartNanos = now;
+        nextTickNanos = now + config.tickNanos();
+        jitterWindowStartNanos = now;
+        t.start();   // Thread.start: alle Felder oben sind für den Steuerungs-Thread sichtbar
         watchdog.start();
         journal.info("steuerung", "EXECUTOR_STARTED", "Steuerungs-Executor gestartet");
     }
@@ -204,24 +334,27 @@ public final class ControlExecutor {
         journal.info("steuerung", "EXECUTOR_STOPPED", "Steuerungs-Executor angehalten");
     }
 
+    /**
+     * Steuerschleife: Ereignisse werden sofort bei Eingang verarbeitet; bis zum nächsten fälligen Zeitpunkt (Takt
+     * oder eingeplante Aufgabe) wartet der Thread an der Warteschlange und die letzte kurze Strecke
+     * ({@link ControlConfig#timerSpinMicros()}) aktiv, weil die Zeitgeber des Betriebssystems grob auflösen.
+     */
     private void loop() {
-        long tickNanos = config.tickNanos();
-        long next = clock.nanoTime() + tickNanos;
+        long spin = config.timerSpinNanos();
         while (running) {
             try {
                 runUrgent();
-                long wait = next - clock.nanoTime();
-                if (wait <= 0) {
-                    tick();
-                    long now = clock.nanoTime();
-                    next += tickNanos;
-                    if (next <= now) {
-                        journal.warn("steuerung", "TICK_OVERRUN", "Takt um " + (now - next + tickNanos) / 1_000_000 + " ms überschritten");
-                        next = now + tickNanos;
-                    }
-                    continue;
+                runDueWork();
+                publish();
+                long wait = nextDueNanos() - clock.nanoTime();
+                if (wait <= 0) continue;
+                Task t;
+                if (wait > spin) {
+                    t = queue.poll(wait - spin, TimeUnit.NANOSECONDS);
+                } else {
+                    t = queue.poll();
+                    if (t == null) { Thread.onSpinWait(); continue; }
                 }
-                Task t = queue.poll(wait, TimeUnit.NANOSECONDS);
                 if (t != null) {
                     runTask(t);
                     runUrgent();
@@ -270,6 +403,120 @@ public final class ControlExecutor {
     private void runUrgent() {
         Task t;
         while ((t = urgent.poll()) != null) runTask(t);
+    }
+
+    /** Vorrangige Aufgaben und alle zu Beginn anstehenden Ereignisse, jedes sofort. */
+    private void drainQueue() {
+        runUrgent();
+        int n = queue.size();
+        for (int i = 0; i < n; i++) {
+            Task t = queue.poll();
+            if (t == null) break;
+            runTask(t);
+            runUrgent();
+        }
+    }
+
+    /** Fällige eingeplante Aufgaben, danach der Takt, falls er laut Raster fällig ist. */
+    private void runDueWork() {
+        runDueTimers();
+        long now = clock.nanoTime();
+        if (now >= nextTickNanos) scheduledTick(now);
+    }
+
+    private ScheduledAction peekTimer() {
+        ScheduledAction head;
+        while ((head = timers.peek()) != null && head.isCancelled()) timers.poll();
+        return head;
+    }
+
+    private void runDueTimers() {
+        for (int i = 0; ; i++) {
+            ScheduledAction a = peekTimer();
+            long now = clock.nanoTime();
+            if (a == null || a.dueNanos() > now) return;
+            if (i >= MAX_TIMERS_PER_PASS) {
+                internalError("Zeitplan", new IllegalStateException("mehr als " + MAX_TIMERS_PER_PASS + " sofort fällige Aufgaben"));
+                timers.clear();
+                return;
+            }
+            timers.poll();
+            timerLateness.record(now - a.dueNanos());
+            a.markDone(now);
+            runUrgent();
+            runTask(new Task(a.label(), a.action()));
+            runUrgent();
+        }
+    }
+
+    /** Takt laut Raster: Abweichung vom Sollzeitpunkt messen, Takt rechnen, nächsten Sollzeitpunkt setzen. */
+    private void scheduledTick(long now) {
+        long tickNanos = config.tickNanos();
+        long deviation = now - nextTickNanos;
+        tickJitter.record(deviation);
+        if (deviation >= tickNanos) {
+            tickJitter.recordOverrun();
+            if (!overrunReportedInWindow) {
+                overrunReportedInWindow = true;
+                journal.warn("steuerung", "TICK_OVERRUN", "Takt um " + deviation / 1_000_000
+                        + " ms verspätet, mindestens ein Takt ausgefallen (weitere im nächsten Bericht zur Taktschwankung)");
+            }
+        }
+        runTick(now);
+        nextTickNanos += tickNanos;
+        if (nextTickNanos <= now) nextTickNanos = now + tickNanos;   // nach Überlauf neu aufsetzen, nicht nachholen
+    }
+
+    /** Ein Rechentakt mit der tatsächlich seit dem vorigen Takt vergangenen Zeit. */
+    private void runTick(long now) {
+        long elapsed = Math.max(0, now - previousTickStartNanos);
+        previousTickStartNanos = now;
+        try {
+            OperatingState state = plant.operatingState();
+            long hb = latestHeartbeat.getAndSet(NO_HEARTBEAT);
+            if (hb != NO_HEARTBEAT) communication.alive(hb);
+            if (state != OperatingState.OFFLINE) checkCommunication();
+            feedback.poll();
+        } catch (RuntimeException e) {
+            internalError("Takt", e);
+        }
+        for (TickTask task : List.copyOf(tickTasks)) {
+            try {
+                task.onTick(now, elapsed);
+            } catch (RuntimeException e) {
+                internalError("Taktaufgabe", e);
+            }
+            runUrgent();
+        }
+        reportTimingIfDue(now);
+        lastTickNanos = clock.nanoTime();
+    }
+
+    /** Gedrosselter Bericht: höchstens einmal je {@link ControlConfig#jitterReportSeconds()}. */
+    private void reportTimingIfDue(long now) {
+        if (now - jitterWindowStartNanos < config.jitterReportNanos()) return;
+        TimingStatistics.Summary ticks = tickJitter.summary();
+        TimingStatistics.Summary timed = timerLateness.summary();
+        if (ticks.count() > 0 || ticks.overruns() > 0 || timed.count() > 0) {
+            String msg = "Taktschwankung (Takt " + config.tickMillis() + " ms): " + ticks.format()
+                    + "; eingeplante Befehle: " + timed.format();
+            boolean bad = ticks.overruns() > 0 || ticks.p99Ms() > config.tickMillis() / 2.0 || timed.p99Ms() > 5.0;
+            if (bad) journal.warn("steuerung", "TICK_JITTER", msg);
+            else journal.info("steuerung", "TICK_JITTER", msg);
+        }
+        lastTickJitterReport = ticks;
+        lastTimerLatenessReport = timed;
+        tickJitter.reset();
+        timerLateness.reset();
+        overrunReportedInWindow = false;
+        jitterWindowStartNanos = now;
+    }
+
+    /** Ausgabe der Rückmelder-Entprellung: Melderzustand setzen, dann Beobachter (Positionsabgleich) informieren. */
+    private void onFilteredFeedback(FeedbackFilter.Event e) {
+        plant.setSensor(e.contact(), e.occupied() ? SensorState.OCCUPIED : SensorState.FREE);
+        for (FeedbackObserver o : List.copyOf(feedbackObservers))
+            o.onFeedback(e.contact(), e.occupied(), e.timestampNanos());
     }
 
     private void runTask(Task t) {
