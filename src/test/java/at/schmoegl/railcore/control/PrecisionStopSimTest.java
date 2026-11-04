@@ -99,7 +99,7 @@ public class PrecisionStopSimTest {
                             Distribution.normal(0, 3, -12, 12)));
             }
             double trueStart = Distribution.normal(0, 5, -20, 20).sample(rnd);
-            ex = ControlExecutor.create(ControlConfig.defaults(), clock, journal, station, CommandSink.direct(station),
+            ex = ControlExecutor.create(ControlConfig.defaults(), clock, journal, station,
                     List.of(CONTACT), address -> address == 3);   // Platzhalter für die Reservierung
             controller = new SimWorld.Controller() {
                 @Override public long nextDueNanos() { return ex.nextDueNanos(); }

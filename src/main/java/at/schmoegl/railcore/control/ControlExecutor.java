@@ -78,6 +78,9 @@ public final class ControlExecutor {
     private final FeedbackFilter feedback;
     private final CommunicationWatchdog communication;
     private final GatedCommandSink commands;
+    private final CommandScheduler scheduler;
+    /** Zählt jede Nothalt-Anforderung (aus jedem Thread), bevor gesendet wird; der Befehlsplaner prüft sie. */
+    private final AtomicLong emergencyEpoch = new AtomicLong();
     private final ExecutorWatchdog watchdog;
     private final BlockingQueue<Task> queue;
     /** Vorrangige Aufgaben (Nothalt nachziehen, Störung) – unbegrenzt, damit sie nie verloren gehen. */
@@ -108,8 +111,9 @@ public final class ControlExecutor {
     private volatile TimingStatistics.Summary lastTickJitterReport = TimingStatistics.Summary.EMPTY;
     private volatile TimingStatistics.Summary lastTimerLatenessReport = TimingStatistics.Summary.EMPTY;
 
-    private ControlExecutor(ControlConfig config, TimeSource clock, Journal journal, CommandStation station,
-                            CommandSink sink, Collection<Integer> knownContacts, MovementAuthority authority) {
+    private ControlExecutor(ControlConfig config, SchedulerConfig schedulerConfig, TimeSource clock, Journal journal,
+                            CommandStation station, Collection<Integer> knownContacts, MovementAuthority authority,
+                            BudgetCorrection correction) {
         this.config = Objects.requireNonNull(config);
         this.clock = Objects.requireNonNull(clock);
         this.journal = Objects.requireNonNull(journal);
@@ -119,7 +123,10 @@ public final class ControlExecutor {
         this.feedback = new FeedbackFilter(clock, journal, config.feedbackReleaseMillis(), config.flickerWarnThreshold(),
                 this::onFilteredFeedback);
         this.communication = new CommunicationWatchdog(clock, journal, config.commWarnMillis(), config.commLostMillis());
-        this.commands = new GatedCommandSink(guard, plant, journal, Objects.requireNonNull(sink), Objects.requireNonNull(authority));
+        CommandRules rules = new CommandRules(plant, Objects.requireNonNull(authority));
+        this.scheduler = new CommandScheduler(Objects.requireNonNull(schedulerConfig), guard, clock, journal, station, rules,
+                plant, this, emergencyEpoch::get, correction);
+        this.commands = new GatedCommandSink(guard, rules, journal, scheduler);
         this.queue = new LinkedBlockingQueue<>(config.queueCapacity());
         this.watchdog = new ExecutorWatchdog(this, clock, journal, config);
         this.lastTickNanos = clock.nanoTime();
@@ -131,23 +138,38 @@ public final class ControlExecutor {
 
     /**
      * Legt den Executor ohne Reservierungsverwaltung an: jede Bewegung wird abgewiesen ({@link MovementAuthority#NONE}).
+     * Befehle gehen über Schranke → {@link CommandScheduler} (Standardwerte) → {@code station}; der Nothalt direkt.
      *
-     * @param sink           Ausgabe der Befehle (später CommandScheduler); der Nothalt geht direkt an {@code station}
      * @param knownContacts  Melder der Anlage; sie starten „unbekannt“
      */
     public static ControlExecutor create(ControlConfig config, TimeSource clock, Journal journal, CommandStation station,
-                                         CommandSink sink, Collection<Integer> knownContacts) {
-        return create(config, clock, journal, station, sink, knownContacts, MovementAuthority.NONE);
+                                         Collection<Integer> knownContacts) {
+        return create(config, clock, journal, station, knownContacts, MovementAuthority.NONE);
     }
 
     /**
-     * Wie {@link #create(ControlConfig, TimeSource, Journal, CommandStation, CommandSink, Collection)}, mit einer
+     * Wie {@link #create(ControlConfig, TimeSource, Journal, CommandStation, Collection)}, mit einer
      * Bewegungsfreigabe (später die Reservierungsverwaltung). Die übrigen Sperren der Befehlsschranke (Nothalt,
      * Störung, Verbindung, Betriebszustand) bleiben davon unberührt.
      */
     public static ControlExecutor create(ControlConfig config, TimeSource clock, Journal journal, CommandStation station,
-                                         CommandSink sink, Collection<Integer> knownContacts, MovementAuthority authority) {
-        ControlExecutor ex = new ControlExecutor(config, clock, journal, station, sink, knownContacts, authority);
+                                         Collection<Integer> knownContacts, MovementAuthority authority) {
+        return create(config, SchedulerConfig.defaults(), clock, journal, station, knownContacts, authority);
+    }
+
+    /** Wie oben, mit eigenen Einstellungen des Befehlsplaners. */
+    public static ControlExecutor create(ControlConfig config, SchedulerConfig schedulerConfig, TimeSource clock,
+                                         Journal journal, CommandStation station, Collection<Integer> knownContacts,
+                                         MovementAuthority authority) {
+        return create(config, schedulerConfig, clock, journal, station, knownContacts, authority, BudgetCorrection.NONE);
+    }
+
+    /** Paketintern: mit Budget-Nachführung (Erweiterungsstelle, bis zur Bestätigung des Echos nicht genutzt). */
+    static ControlExecutor create(ControlConfig config, SchedulerConfig schedulerConfig, TimeSource clock, Journal journal,
+                                  CommandStation station, Collection<Integer> knownContacts, MovementAuthority authority,
+                                  BudgetCorrection correction) {
+        ControlExecutor ex = new ControlExecutor(config, schedulerConfig, clock, journal, station, knownContacts, authority,
+                Objects.requireNonNull(correction));
         station.addListener(ex.stationListener);
         journal.info("steuerung", "EXECUTOR_CREATED", "Steuerungs-Executor angelegt (Takt " + config.tickMillis()
                 + " ms, Watchdog-Toleranz " + config.watchdogToleranceMillis() + " ms, " + knownContacts.size() + " Melder unbekannt)");
@@ -171,6 +193,7 @@ public final class ControlExecutor {
      * auf Nothalt bzw. Störung gesetzt.
      */
     public void emergencyStop(String source, String reason) {
+        emergencyEpoch.incrementAndGet();   // vor dem Senden: der Befehlsplaner sendet danach keine Fahrt mehr
         boolean sent;
         try {
             station.emergencyStop();
@@ -197,6 +220,12 @@ public final class ControlExecutor {
 
     /** Befehlsausgabe mit Sicherheitsschranke; nur vom Steuerungs-Thread nutzbar. */
     public CommandSink commands() { return commands; }
+
+    /**
+     * Befehlsplaner hinter der Schranke (Messwerte, Budget, Wartezeit-Schätzung); nur Steuerungs-Thread. Befehle
+     * immer über {@link #commands()} senden, nie direkt hierüber.
+     */
+    public CommandScheduler scheduler() { return scheduler; }
 
     /**
      * Ein vollständiger Schritt ohne Zeitplan (Testbetrieb): alle anstehenden Ereignisse und fälligen eingeplanten
@@ -480,6 +509,12 @@ public final class ControlExecutor {
         } catch (RuntimeException e) {
             internalError("Takt", e);
         }
+        try {
+            scheduler.onTick(now);
+        } catch (RuntimeException e) {
+            internalError("Befehlsplaner", e);
+        }
+        runUrgent();
         for (TickTask task : List.copyOf(tickTasks)) {
             try {
                 task.onTick(now, elapsed);
@@ -551,12 +586,14 @@ public final class ControlExecutor {
         } else if (lastComm == CommunicationWatchdog.Status.LOST && s != CommunicationWatchdog.Status.LOST) {
             // Lastenheft 7: nach Wiederverbindung sofort Nothalt, Zustände neu einlesen, Freigabe durch Bediener
             emergencyStop("verbindung", "Verbindung wiederhergestellt – Nothalt vor dem Neueinlesen");
+            scheduler.connectionRestored();
         }
         lastComm = s;
     }
 
     private void connectionLost(String why) {
         emergencyStop("verbindung", why);
+        scheduler.connectionLost();
         enterFault("verbindung", why);
         feedback.reset();
         plant.allSensorsUnknown(why);
@@ -566,6 +603,7 @@ public final class ControlExecutor {
 
     private void applyEmergency(String source, String reason, boolean sent) {
         plant.latchEmergency(source + ": " + reason);
+        scheduler.onEmergency();
         if (plant.operatingState() != OperatingState.FAULT
                 && !plant.transition(OperatingState.EMERGENCY_STOP, "Nothalt (" + source + "): " + reason)) {
             enterFault(source, "Nothalt im Zustand " + plant.operatingState().german() + ": " + reason);
@@ -646,11 +684,14 @@ public final class ControlExecutor {
                 lastComm = CommunicationWatchdog.Status.OK;
                 plant.setCommunication(CommunicationWatchdog.Status.OK);
                 plant.transition(OperatingState.CONNECTING, "Verbunden mit " + info);
+                scheduler.connectionRestored();
             } else {
                 journal.info("zentrale", "CONNECTED", "Verbindung gemeldet im Zustand " + s.german() + ": " + info);
+                scheduler.connectionRestored();   // nach Verlust: Halt einmalig neu übertragen (Zustand bleibt Störung)
             }
         } else if (s == OperatingState.CONNECTING) {
             plant.transition(OperatingState.OFFLINE, "Verbindungsaufbau abgebrochen: " + info);
+            scheduler.connectionLost();
             feedback.reset();
             plant.allSensorsUnknown("Verbindung getrennt");
         } else if (s != OperatingState.OFFLINE) {

@@ -17,11 +17,14 @@ import java.util.TreeMap;
  * @param timeNanos        Zeitpunkt der Aufnahme (TimeSource)
  * @param emergencyLatched Nothalt ausgelöst und noch nicht vom Bediener quittiert
  * @param executorStalled  Executor-Watchdog hat einen Hänger erkannt (Wert zum Zeitpunkt der Aufnahme)
+ * @param scheduler        Status des Befehlsplaners (Überlast mit Befund, Budget, Wartezeiten des Messfensters);
+ *                         aktualisiert bei Überlastwechsel und periodischem Bericht, nicht je Befehl
  */
 public record PlantSnapshot(long version, long timeNanos, OperatingState operatingState, String stateReason,
                             boolean emergencyLatched, boolean executorStalled, TrackPower trackPower,
                             CommunicationWatchdog.Status communication,
-                            Map<Integer, SensorState> sensors, Map<String, TrainView> trains) {
+                            Map<Integer, SensorState> sensors, Map<String, TrainView> trains,
+                            SchedulerMetrics scheduler) {
 
     /** Unveränderliche Sicht auf einen Zug. */
     public record TrainView(String id, String name, int address, TrainStatus status) {}
@@ -29,6 +32,7 @@ public record PlantSnapshot(long version, long timeNanos, OperatingState operati
     public PlantSnapshot {
         sensors = Collections.unmodifiableMap(new TreeMap<>(sensors));
         trains = Collections.unmodifiableMap(new TreeMap<>(trains));
+        java.util.Objects.requireNonNull(scheduler);
     }
 
     /** Zustand eines Melders; nicht erfasste Melder sind „unbekannt“, nie frei. */

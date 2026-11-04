@@ -52,6 +52,19 @@ public final class TrainDriver {
     private final boolean[] pointDone;
     private final ControlExecutor.TickTask tickTask = (now, elapsed) -> update(now);
     private final ControlExecutor.FeedbackObserver observer = this::onFeedback;
+    /**
+     * Rückmeldung des Befehlsplaners: die Positionsschätzung übernimmt einen Fahrbefehl erst zum tatsächlichen
+     * Sendezeitpunkt (Wartezeit im Befehlsplaner verlängert die Befehlsverzögerung); bis dahin rechnet sie mit der
+     * bisherigen Geschwindigkeit weiter, die die Lok ja auch noch fährt.
+     */
+    private final CommandSink.DriveListener listener = new CommandSink.DriveListener() {
+        @Override public void sent(int speedStep, Direction direction, long sentNanos) {
+            est.command(sentNanos, profile.speed(dir, speedStep), commandDelayNanos);
+            if (speedStep == 0) stopCommandNanos = sentNanos;
+        }
+
+        @Override public void dropped(String reason) { onDropped(reason); }
+    };
 
     private State state = State.DRIVING;
     private int lastStep;
@@ -142,11 +155,11 @@ public final class TrainDriver {
             journal.warn("fahrt", "STOP_TARGET_PULLED_BACK", "Haltepunkt " + plan.stop().id() + " zu nah am Ende der Freigabe – Ziel auf "
                     + fmt(plan.targetMm()) + " mm zurückgenommen");
         if (lastStep <= 0) { haltNow(now, "Streckengeschwindigkeit ergibt keine Fahrstufe", true); return; }
-        if (!ex.commands().drive(order.address(), lastStep, order.steps(), dir)) {
+        if (!ex.commands().drive(order.address(), lastStep, order.steps(), dir, CommandPriority.AUTOMATIC, listener)) {
             lastStep = 0;
             unplanned = true;
             haltReason = "Fahrbefehl abgewiesen";
-            ex.commands().drive(order.address(), 0, order.steps(), dir);
+            ex.commands().drive(order.address(), 0, order.steps(), dir, CommandPriority.SAFETY, listener);
             finish(State.ABORTED, "Fahrauftrag " + order.trainId() + " abgebrochen: Fahrbefehl abgewiesen");
             return;
         }
@@ -170,7 +183,8 @@ public final class TrainDriver {
         double sigma = est.sigmaMm(uncertainty);
         if (checkMissingPoints(now, sigma)) return;
 
-        double sEff = est.predictPositionMm(now + commandDelayNanos);
+        // Befehlsverzögerung = eingemessene Verzögerung + voraussichtliche Wartezeit im Befehlsplaner
+        double sEff = est.predictPositionMm(now + commandDelayNanos + ex.scheduler().expectedWaitNanos(CommandPriority.SAFETY));
         double vSup = supervision(sEff, sigma);
         double va = plan.approachSpeedMmS();
         int step = profile.stepFor(dir, allowed(sEff, sigma));
@@ -269,13 +283,22 @@ public final class TrainDriver {
         haltNow(now, "Halt am Bahnsteig " + plan.stop().id(), false);
     }
 
+    /** Ein angenommener Fahrbefehl wurde vor dem Senden verworfen (statt seiner ging Halt hinaus): im Zweifel halt. */
+    private void onDropped(String reason) {
+        if (finished()) return;
+        long now = ex.clock().nanoTime();
+        est.advanceTo(now);
+        if (ex.plant().emergencyLatched()) { abort(now, "Nothalt gesetzt"); return; }
+        if (state != State.STOPPING) haltNow(now, "Fahrbefehl beim Senden verworfen: " + reason, true);
+    }
+
     private boolean send(long now, int step) {
-        boolean ok = ex.commands().drive(order.address(), step, order.steps(), dir);
+        // Bremsstufen der Halteplanung: Sicherheitsklasse (sie halten das Freigabeende ein)
+        boolean ok = ex.commands().drive(order.address(), step, order.steps(), dir, CommandPriority.SAFETY, listener);
         if (!ok) {
             haltNow(now, "Fahrbefehl Stufe " + step + " abgewiesen", true);
             return false;
         }
-        est.command(now, profile.speed(dir, step), commandDelayNanos);
         lastStep = step;
         return true;
     }
@@ -283,8 +306,7 @@ public final class TrainDriver {
     /** Fahrstufe 0 sofort. {@code unplannedHalt}: auf kürzestem Weg, von der Genauigkeit ausgenommen. */
     private void haltNow(long now, String reason, boolean unplannedHalt) {
         cancelActions();
-        ex.commands().drive(order.address(), 0, order.steps(), dir);   // Halten ist immer erlaubt
-        est.command(now, 0, commandDelayNanos);
+        ex.commands().drive(order.address(), 0, order.steps(), dir, CommandPriority.SAFETY, listener);   // Halten ist immer erlaubt
         lastStep = 0;
         stopCommandNanos = now;
         haltReason = reason;
@@ -302,8 +324,7 @@ public final class TrainDriver {
     private void abort(long now, String reason) {
         cancelActions();
         if (lastStep > 0) {
-            ex.commands().drive(order.address(), 0, order.steps(), dir);
-            est.command(now, 0, commandDelayNanos);
+            ex.commands().drive(order.address(), 0, order.steps(), dir, CommandPriority.SAFETY, listener);
             lastStep = 0;
         }
         unplanned = true;
