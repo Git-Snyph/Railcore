@@ -4,11 +4,13 @@ Klärt an der echten Z21 die offenen Hardware-Fragen (Lastenheft Kap. 8) und erk
 
 ## Start
 
+In PowerShell mit `.\gradlew`, in der Eingabeaufforderung (cmd) mit `gradlew`.
+
 ```
-gradlew z21Check --console=plain --args="--host 192.168.0.111"              # Stufe 1, passiv
-gradlew z21Check --console=plain --args="--host 192.168.0.111 --dauer 120"  # längere Beobachtung
-gradlew z21Check --console=plain --args="--host 192.168.0.111 --stufe aktiv"
-gradlew z21Check --console=plain --args="--hilfe"                           # alle Optionen
+.\gradlew z21Check --console=plain --args="--host 192.168.0.111"              # Stufe 1, passiv
+.\gradlew z21Check --console=plain --args="--host 192.168.0.111 --dauer 120"  # längere Beobachtung
+.\gradlew z21Check --console=plain --args="--host 192.168.0.111 --stufe aktiv"
+.\gradlew z21Check --console=plain --args="--hilfe"                           # alle Optionen
 ```
 
 Ergebnis: Prüfbericht `berichte/z21-pruefbericht-<Datum>-<Zeit>.txt`, vollständiges Journal mit allen Rohpaketen unter `logs/`.
@@ -72,3 +74,12 @@ Jeder Eingriff wird im Klartext angekündigt und nur nach der Eingabe `JA` (Gro�
 - **Abfrage funktioniert:** 240 von 240 Lokinfo-Abfragen beantwortet. Jede Änderung der Maus war in der nächsten Antwort sichtbar: Fahrstufe 1–10 und zurück in beiden Richtungen, Richtungswechsel, F0 ein/aus. Verzögerung höchstens Abfrageabstand (250 ms) plus Antwortzeit.
 - Ohne eigene Abfrage kam wieder keine Lokmeldung.
 - **Geklärt:** Handregler an der Z21 auf einer Stellvertreter-Adresse lassen sich durch regelmäßiges Abfragen verfolgen; Einzel-Abo und Lok-Broadcast liefern dafür nichts. Offen: Rückschreiben des begrenzten Werts auf die Anzeige des Handreglers (aktive Prüfung) und die Last bei mehreren Stellvertreter-Adressen.
+
+### 04.11.2026 – aktive Stufe (drei Läufe, Weiche 15 an 10836 WD02, Adressen 9–16)
+- **Weichenlage war vertauscht (behoben):** RailCore sendete „Gerade“ als P=0 und „Abzweig“ als P=1. An der Anlage stellte „Gerade“ die Weiche auf Abzweig, „Abzweig“ bewegte eine gerade stehende Weiche nicht; Z21-App und iTrain schalten richtig. Richtig ist RCN-213: **P=1 gerade, P=0 abzweigend**; die Rückmeldung ZZ=10 bedeutet gerade, ZZ=01 abzweigend. Nach der Korrektur stellte W015 in beide Richtungen richtig (Lauf 13:00).
+- **10836-Adressierung geklärt:** Weichenadresse 15 (auf dem Draht 14) schaltet W015; Impuls 150 ms reicht.
+- **POM-Zubehör geklärt:** CV 8 über Decoderadresse 3 = (Weiche − 1) / 4 gelesen, Antwort nach rund 70 ms: 161 (0xA1, NMRA-Herstellerkennung Roco/Modelleisenbahn GmbH). Es wurde nichts geschrieben.
+- **Fahren auf 9001:** Die Z21 bestätigt den eigenen Fahrbefehl mit einer Lokmeldung (Echo vorhanden); Fahrstufe 0 und Nothalt kamen an, auf 9001 ist kein Decoder. Die Antwortzeit des Echos ist noch nicht gemessen – die Budget-Nachführung (Entscheidung 27) bleibt aus, bis sie gemessen ist.
+- **Anzeige der WLAN-Maus:** Eine Maus an der Z21 auf 9001 zeigt die von RailCore gesendete Fahrstufe – Rückschreiben eines begrenzten Werts auf die Anzeige ist möglich.
+- R-Bus weiter um ein Modul versetzt (CAN 14 → R-Bus 15, 15 → 16, 16 → 17), weiter zurückgestellt.
+- Bedienung: Die Bestätigung verlangt genau `JA`; „Ja“ bricht ab (so gewollt).

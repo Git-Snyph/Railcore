@@ -9,10 +9,12 @@
 
 ## Befehle
 
+In PowerShell mit `.\gradlew`, in der Eingabeaufforderung (cmd) mit `gradlew`.
+
 ```
-gradlew build -q      # bauen und alle Tests ausführen, leise
-gradlew selfTest      # nur die Tests
-gradlew z21Check --console=plain --args="--hilfe"   # Prüfprogramm, Optionen anzeigen
+.\gradlew build -q      # bauen und alle Tests ausführen, leise
+.\gradlew selfTest      # nur die Tests
+.\gradlew z21Check --console=plain --args="--hilfe"   # Prüfprogramm, Optionen anzeigen
 ```
 
 `build` hängt über `check` am `selfTest`.
