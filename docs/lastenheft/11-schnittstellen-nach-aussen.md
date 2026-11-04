@@ -25,3 +25,13 @@ Alle externen Zugänge sprechen mit der Steuerungs-Schnittstelle des Kerns, gena
 - Zugriff nur aus dem Heimnetz, optional auf bestimmte Geräte beschränkt.
 - REST und MQTT sind standardmäßig deaktiviert; die erste API-Version ist nur lesend. Schreibrechte werden ausdrücklich freigeschaltet, Fahrbefehle und Nothalt getrennt berechtigt. Sicherheitsfunktionen lassen sich nie über REST oder MQTT abschalten oder umgehen. Rollen (Administrator, Fahrdienstleiter, Lokführer, Beobachter, Besucher) sind im Datenmodell vorgesehen.
 - Jeder externe Eingriff wird mit Herkunft im Betriebsprotokoll vermerkt.
+
+**Lizenzierung (später)**
+
+Konzept für den späteren Vertrieb; noch nicht umgesetzt.
+
+- **Signierter Lizenzcode:** Signatur mit Ed25519, offline prüfbar. Der öffentliche Schlüssel ist im Programm enthalten, der private Schlüssel liegt nie im Repository.
+- **Inhalt des Lizenzcodes:** Kunde, freigeschaltete Produktbereiche, Grenzen (z. B. Anzahl Züge), Update-Berechtigung (bis Datum oder Version), optional Rechnerbindung.
+- **Lizenzgenerator:** separates Werkzeug, wird nicht ausgeliefert.
+- **Demo-Modus ohne Lizenz:** eingeschränkter Betrieb, z. B. höchstens 3 Züge in der Automatik; Simulator und Gleisplan-Editor frei.
+- **Sicherheitsregel:** Die Lizenz wird nur beim Start und beim Starten neuer Vorgänge geprüft, nie während laufender Fahrten; eine Lizenzprüfung bricht nie eine laufende Fahrt ab. Nothalt, Watchdog, Bremsen und Wiederanlauf funktionieren immer, unabhängig von Lizenz und Demo-Modus.
