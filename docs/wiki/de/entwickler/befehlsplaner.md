@@ -14,6 +14,7 @@ Nothalt > Sicherheit > Automatik > Fahrplan > Hand > Komfort (`CommandPriority`)
 | Planmäßige Bremsstufe der Halteplanung | Automatik, vor Anfahren und Beschleunigen; wartet sie länger als `escalateAfterMillis` (Standard 150 ms), wird sie zur Sicherheit aufgestuft |
 | Anfahren, Beschleunigen | Automatik |
 | Funktionen, Komfort | Komfort |
+| Lokzustands-Abfrage (Handregler auf Stellvertreter-Adressen) | Hand, Kosten 0 |
 
 Innerhalb einer Klasse: Halt vor Absenkung vor Erhöhung, dann älteste zuerst. In der Sicherheitsklasse stehen echte Sicherheitsbefehle vor aufgestuften Bremsstufen.
 
@@ -21,7 +22,9 @@ Innerhalb einer Klasse: Halt vor Absenkung vor Erhöhung, dann älteste zuerst. 
 
 - **Zusammenfassen:** Je Lok zählt nur der neueste Wert; unveränderte Fahrstufen werden nie gesendet.
 - **Halte** dürfen das Budget um 2 Befehle überziehen.
-- **Nach dem Neuverbinden** erhält jede bekannte Lok einmal Halt, nie eine Fahrstufe.
+- **Nach dem (Neu-)Verbinden** erhält jede bekannte Lok einmal Halt, nie eine Fahrstufe (Entscheidung 28). Bekannt ist jede Lok, der gesendet wurde, und jeder angemeldete Zug – auch wenn er in dieser Sitzung noch nie angesprochen wurde, denn nach einem Absturz kann die Zentrale ihn noch fahren. Wird ein Zug bei bestehender Verbindung angemeldet, erhält er sofort Halt. Richtung: zuletzt gesendet, sonst von der Zentrale gemeldet, sonst vorwärts, ohne vorherige Abfrage (Entscheidung 33). Beim ersten Verbinden nach dem Programmstart sendet die Steuerung zusätzlich einen Nothalt für die ganze Anlage – am Befehlsplaner vorbei, er muss quittiert werden (Entscheidung 33).
+- **Lokzustands-Abfragen** (`requestLocoState`) erzeugen kein DCC-Paket und kosten deshalb kein Budget; sie warten aber in der Vorrangfolge hinter höher eingestuften Befehlen, denen Tokens fehlen. Wartende Abfragen derselben Adresse werden zusammengefasst, nie als „unverändert“ unterdrückt; ohne Verbindung entfallen sie. Die Handregler-Abfrage läuft in der Klasse Hand, nicht Komfort: Komfort wird bei Überlast ganz zurückgestellt, dann sähe RailCore nicht mehr, dass der Handregler auf Halt zurückgedreht wurde. Stellvertreter-Adressen mit Fahrstufe > 0 oder unbekanntem Zustand zählen als aktive Loks im Budget, weil die Zentrale sie auf dem Gleis auffrischt. Ob die Abfrage an der Z21 wirklich kein Gleispaket erzeugt, ist an der Hardware zu prüfen.
+- **Fähigkeiten:** F29–F31 nur, wenn die Zentrale sie erkennbar kann.
 - **Weichenbefehle** werden nie unterdrückt (Weichen melden keine Endlage); solange sie warten, werden sie zusammengefasst.
 - **Versatz im Takt:** Jeder Zug rechnet mit einem festen Versatz im 50-ms-Takt (aus Adresse · φ⁻¹), damit nicht alle Züge im selben Augenblick senden. Brems- und Haltebefehle liegen auf exakt berechneten Zeitpunkten, nicht auf dem Takt.
 
