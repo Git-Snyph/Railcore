@@ -55,4 +55,7 @@ public final class ConsoleOperator implements Operator {
 
     @Override
     public void discardPending() { lines.clear(); }
+
+    @Override
+    public boolean isInputClosed() { return endOfInput && lines.isEmpty(); }
 }

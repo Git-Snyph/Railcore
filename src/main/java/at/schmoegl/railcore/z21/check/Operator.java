@@ -17,4 +17,10 @@ public interface Operator {
 
     /** Verwirft vorab getippte Eingaben, damit eine alte Zeile nie als Bestätigung gilt. */
     void discardPending();
+
+    /**
+     * {@code true}, wenn die Eingabe geschlossen ist (keine Konsole) und keine Zeilen mehr anstehen.
+     * Bestätigungen gelten dann als abgelehnt; eine passive Beobachtung läuft dagegen die volle Zeit.
+     */
+    default boolean isInputClosed() { return false; }
 }
