@@ -41,6 +41,7 @@ Wenn eine Aufgabe einem dieser Grundsätze widerspricht: nicht umsetzen, sondern
 
 - **Niemals ohne ausdrückliche Bestätigung des Nutzers** Gleisspannung einschalten, Loks fahren, Weichen schalten oder CVs schreiben – auch nicht in Tests oder im Prüfprogramm.
 - Neue Funktionen zuerst im Simulator testen, dann Hardware-in-the-Loop, erst danach echter Betrieb.
+- Aufgaben mit Zugriff auf echte Hardware (Z21-Verbindung, Prüfprogramm, Gleisspannung, Loks, Weichen, CVs) nie an Agenten abgeben, sondern in der Hauptsitzung erledigen, damit der Nutzer jeden Schritt live sieht und eingreifen kann (Entscheidung 22).
 - Protokolldetails, die als „an Hardware zu prüfen“ markiert sind (POM-Zubehör, 10836-Adressierung, Stellvertreter-Adresse), nicht als gesichert behandeln. Geklärt (`docs/Z21-PRUEFPROGRAMM.md`): RailCom-Richtungsbits des 10808 zeigen die Aufgleisrichtung der Lok, nicht die Fahrtrichtung; die Z21 sendet trotz Abo keinen Lok-Broadcast bei Fremdsteuerung.
 
 ## Code und Tests
@@ -68,6 +69,7 @@ Logo: `docs/bilder/railcore-logo.png`. Programmsymbol: `docs/bilder/railcore-ico
 - Sicherheitsrelevante Kernlogik (safety/, train/, z21/, Reservierungen, Fahrstraßen, Positionsberechnung, Bremskurven, Befehlsplaner, Watchdog, Wiederanlauf, Z21-Prüfprogramm) an den Agenten **railcore-kern** (Opus) übergeben.
 - Routine (Tests, Doku, Umbenennungen, Build-Konfiguration) an **railcore-routine** (Sonnet) übergeben.
 - Ist eine ganze Sitzung überwiegend Kernlogik, dem Nutzer zu Beginn empfehlen, die Sitzung auf Opus umzustellen.
+- Für Kernaufgaben mit Hardwarezugriff die Hauptsitzung auf Opus umstellen statt railcore-kern zu verwenden. Agenten nur für Aufgaben, bei denen das Ergebnis zählt (Tests, Doku, Aufräumen, reine Simulator-Logik).
 
 ## Commits
 
