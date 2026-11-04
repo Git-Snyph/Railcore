@@ -1,17 +1,15 @@
 # RailCore – Arbeitsanweisung für Claude
 
-RailCore ist eine eigene Modellbahn-Steuerung (Java 25, Desktop) für eine Roco Z21 mit Z21 Detector 10808 (CAN, RailCom).
-Ziel: bis zu 100 Züge vollautomatisch, wegbasiert und sicher fahren, mit Handbetrieb unter Zugbeeinflussung.
+RailCore: eigene Modellbahn-Steuerung (Java 25, Desktop) für eine Roco Z21 mit Z21 Detector 10808 (CAN, RailCom). Ziel: bis zu 100 Züge vollautomatisch, wegbasiert und sicher, mit Handbetrieb unter Zugbeeinflussung.
 
-Maßgebliche Unterlagen:
-- `docs/lastenheft/` – **maßgebliche Fassung** des technischen Lastenhefts als Kapitel-Dateien; nur das für die Aufgabe nötige Kapitel lesen (Inhaltsverzeichnis in README.md).
-- Lesbare Fassung mit Diagrammen: Dokument „RailCore – Technisches Lastenheft“ in claude.ai (https://claude.ai/artifact/EZJSUZJ3T2DzCGpGTZfaDM).
-- Jede Änderung am Lastenheft zuerst in docs/lastenheft/, danach im claude.ai-Dokument nachziehen (Entscheidung 25).
-- `docs/ENTSCHEIDUNGEN.md` – Entscheidungsprotokoll. Vor jeder Architekturänderung lesen; neue Entscheidungen oben eintragen.
-- `docs/FEATURES.md` – Anforderungsübersicht
-- `docs/anleitung/` (Anwender-Anleitung) und `docs/wiki/` (Nachschlagewissen für Anwender und Entwickler), je Sprache ein Ordner (`de`, später `en`); Schreibregeln in `docs/dokumentation/RICHTLINIEN.md` (Entscheidung 31). Jede für Anwender sichtbare Änderung zieht Anleitung bzw. Wiki im selben PR nach; Funktionen nie als vorhanden beschreiben, bevor sie gebaut sind.
+Maßgebliche Unterlagen (Details: `docs/dokumentation/ARBEITSWEISE.md`):
+- `docs/lastenheft/` – maßgebliche Fassung, kapitelweise (README.md); danach im claude.ai-Dokument nachziehen (Entscheidung 25).
+- `docs/ENTSCHEIDUNGEN.md` – Entscheidungsprotokoll, vor Architekturänderungen lesen, neue Einträge oben.
+- `docs/FEATURES.md` – Anforderungen.
+- `docs/anleitung/`, `docs/wiki/` – Anleitung/Nachschlagewissen (Regeln RICHTLINIEN.md, Entscheidung 31); sichtbare Änderungen im selben PR nachziehen, nie Funktionen vor dem Bau als vorhanden beschreiben.
+- `docs/dokumentation/ERSCHEINUNGSBILD.md` – Logo, Symbole, Hausfarben.
 
-Sprache: Oberfläche, Kommentare, Dokumentation, Commit-Nachrichten und Protokolltexte auf Deutsch. Bezeichner im Code auf Englisch.
+Sprache: Oberfläche, Kommentare, Doku, Commit-Nachrichten, Protokolle Deutsch; Code-Bezeichner Englisch.
 
 ## Verbindliche Sicherheitsgrundsätze (nie aufweichen)
 
@@ -28,68 +26,54 @@ Wenn eine Aufgabe einem dieser Grundsätze widerspricht: nicht umsetzen, sondern
 
 ## Architekturregeln
 
-- **Ein zentraler Steuerungs-Executor** ändert den Anlagenzustand (Reservierungen, Positionen, Zugzustände). Andere Threads (UDP, Watchdog, Datenbank, Oberfläche) legen nur Ereignisse bzw. Befehle in dessen Warteschlange.
-- **Kern ohne Oberfläche:** Nichts unter `core`, `z21`, `layout`, `train`, `safety`, `diag` darf Swing importieren. Swing nur auf dem Event-Dispatch-Thread; die Oberfläche liest Momentaufnahmen und sendet Befehle.
-- **Alle Befehle über den CommandScheduler** mit Priorität (Nothalt > Sicherheit > Automatik > Fahrplan > Hand > Komfort) und DCC-Budget; unveränderte Fahrstufen nie senden.
-- **Zeit:** für Bewegung ausschließlich `TimeSource` (monoton, `System.nanoTime`); nie `System.currentTimeMillis` oder `Instant.now` für Rechnungen. In Tests `TimeSource.Manual`.
-- **Hardware nur über `CommandStation`.** Zentralen-spezifischer Code bleibt im jeweiligen Adapter (`z21`, später weitere). Fähigkeiten (Firmware, F29–F31, CAN, Lok-Broadcast) nie voraussetzen, sondern erkennen.
-- **Fahrbefehl = Fahrstufe + Richtung in einem Aufruf** (wie DCC); keine getrennten Setter.
-- **Software Motion Control ist Standard** (CV3/CV4 = 0, Trägheit aus der Steuerung); Decoder Motion Control nur als Ausnahme je Lok (Entscheidung 8).
-- **Stellvertreter-Adressen 9000–9999** sind für den Handbetrieb reserviert; echte Decoder in diesem Bereich sind ein Prüffehler (Entscheidung 7). Sie gelten für Handregler an der Z21 (Z21-App, X-Bus, Zimo KLUG); die WLAN-Maus verbindet sich direkt mit RailCore über einen Z21-kompatiblen LAN-Server, ihre Befehle gehen nur nach Prüfung an die Zentrale (Entscheidung 21).
-- **Datenhaltung:** SQLite ist maßgeblich, JSON nur Austausch/Sicherung.
-- Keine fest einprogrammierten Kapazitätsgrenzen; Grenzen sind konfigurierbar und getestet.
+- **Steuerungs-Executor** (ein Thread) ändert den Anlagenzustand; andere Threads legen nur Ereignisse/Befehle in seine Warteschlange.
+- **Kern ohne Oberfläche:** `core`, `z21`, `layout`, `train`, `safety`, `diag` kein Swing; Swing nur im Event-Dispatch-Thread, Oberfläche liest Momentaufnahmen, sendet Befehle.
+- **Alle Befehle über den CommandScheduler**: Priorität Nothalt > Sicherheit > Automatik > Fahrplan > Hand > Komfort, DCC-Budget, unveränderte Fahrstufen nie senden.
+- **Zeit nur über `TimeSource`** (monoton); nie `System.currentTimeMillis`/`Instant.now` für Rechnungen; Tests: `TimeSource.Manual`.
+- **Hardware nur über `CommandStation`**, zentralenspezifisch im Adapter; Fähigkeiten erkennen, nie voraussetzen.
+- **Fahrbefehl = Fahrstufe + Richtung in einem Aufruf**, keine getrennten Setter. **Software Motion Control ist Standard** (CV3/CV4 = 0); Decoder Motion Control nur als Ausnahme je Lok (Entscheidung 8).
+- **Stellvertreter-Adressen 9000–9999** nur für Handregler an der Z21, echte Decoder dort sind ein Prüffehler (Entscheidung 7). Die WLAN-Maus verbindet sich mit RailCore (Z21-kompatibler LAN-Server); ihre Befehle gehen nur nach Prüfung an die Zentrale (Entscheidung 21).
+- **SQLite maßgeblich**, JSON nur Austausch/Sicherung; keine festen Kapazitätsgrenzen, alle konfigurierbar und getestet.
 
 ## Arbeiten mit echter Hardware
 
 - **Niemals ohne ausdrückliche Bestätigung des Nutzers** Gleisspannung einschalten, Loks fahren, Weichen schalten oder CVs schreiben – auch nicht in Tests oder im Prüfprogramm.
-- Neue Funktionen zuerst im Simulator testen, dann Hardware-in-the-Loop, erst danach echter Betrieb.
-- Aufgaben mit Zugriff auf echte Hardware (Z21-Verbindung, Prüfprogramm, Gleisspannung, Loks, Weichen, CVs) nie an Agenten abgeben, sondern in der Hauptsitzung erledigen, damit der Nutzer jeden Schritt live sieht und eingreifen kann (Entscheidung 22).
-- Protokolldetails, die als „an Hardware zu prüfen“ markiert sind (R-Bus-Modulzählung, Antwortzeit des Echos, WLAN-Maus am RailCore-LAN-Server), nicht als gesichert behandeln. Geklärt (`docs/Z21-PRUEFPROGRAMM.md`): RailCom-Richtungsbits des 10808 zeigen die Aufgleisrichtung der Lok, nicht die Fahrtrichtung; die Z21 sendet trotz Abo keinen Lok-Broadcast bei Fremdsteuerung; Weichenlage nach RCN-213 (P=1 gerade, P=0 abzweigend), 10836-Adressierung und POM-Lesen am Zubehördecoder bestätigt; die Z21 bestätigt eigene Fahrbefehle mit einer Lokmeldung.
+- Neue Funktionen zuerst im Simulator, dann Hardware-in-the-Loop, erst danach echter Betrieb.
+- Aufgaben mit Hardwarezugriff nie an Agenten abgeben, in der Hauptsitzung erledigen (Entscheidung 22).
+- Vor jeder Hardware-Arbeit die Liste „geklärt/offen“ in `docs/Z21-PRUEFPROGRAMM.md` lesen; „an Hardware zu prüfen“ markierte Punkte nicht als gesichert behandeln.
 - PowerShell startet den Wrapper nur als `.\gradlew`; Befehle für den Nutzer immer so angeben.
 
 ## Code und Tests
 
-- Paket: `at.schmoegl.railcore`. Bauen mit dem Gradle-Wrapper (`gradlew build`, Gradle 9.x – ältere Versionen unterstützen Java 25 nicht), JDK 25 (Eclipse Temurin). Wrapper: Gradle 9.8.2; Tests laufen über den eigenen `selfTest` (`TestRunner`, ohne JUnit).
-- Jede neue Logik mit Test. Protokoll-Kodierung gegen bekannte Bytefolgen testen, Sicherheitsverhalten im Simulator (Fehlerkatalog im Lastenheft, Abschnitt 7).
-- Kein Merge, wenn Tests fehlschlagen.
-- Fremdbibliotheken sparsam und nur mit Begründung im Entscheidungsprotokoll.
-- Jede neue Fremdbibliothek in docs/LIZENZEN.md eintragen; nur Lizenzen, die einen kommerziellen Vertrieb als geschlossene Software erlauben (z. B. Apache 2.0, MIT, BSD, EPL); GPL/AGPL nur nach Rückfrage.
-
-## Erscheinungsbild
-
-Logo: `docs/bilder/railcore-logo.png`. Programmsymbol: `docs/bilder/railcore-icon.png` (1024 px), `docs/bilder/railcore.ico` (Windows/Installer), Fenstersymbole `src/main/resources/icons/railcore-<Größe>.png` (16–256 px). Hausfarben: Nachtblau `#08121C` (Hintergrund), Signalrot `#EB1C24` (Akzent), Weiß (Schrift). Rot in der Oberfläche sparsam – es ist auch die Farbe für Nothalt und Störungen.
+- Paket `at.schmoegl.railcore`; Gradle-Wrapper 9.8.2, JDK 25 Temurin; Tests über `selfTest` (`TestRunner`, ohne JUnit).
+- Jede neue Logik mit Test: Protokoll gegen bekannte Bytefolgen, Sicherheit im Simulator (Fehlerkatalog Lastenheft 7). Kein Merge, wenn Tests fehlschlagen.
+- Fremdbibliotheken sparsam, begründet im Entscheidungsprotokoll; neu in docs/LIZENZEN.md, nur Lizenzen für geschlossenen kommerziellen Vertrieb (z. B. Apache 2.0, MIT, BSD, EPL); GPL/AGPL nur nach Rückfrage.
 
 ## Sparsam arbeiten
 
-- Eine abgegrenzte Aufgabe pro Sitzung; nur die Dateien lesen, die die Aufgabe betrifft.
-- Bilder, Build-Ausgaben, Protokolle, Datenbanken und Archive nicht lesen (gesperrt in `.claude/settings.json`).
-- Builds und Tests leise ausführen (`gradlew build -q`), vollständige Ausgaben nur bei Fehlern.
-- **Erinnerung an den Nutzer:** Bevor der MobaDB-Import (Excel) beginnt, den Nutzer darauf hinweisen, dass `Read(./**/*.xlsx)` in `.claude/settings.json` gesperrt ist und für den Import vorübergehend entfernt (und danach wieder eingetragen) werden muss.
-- Lastenheft nur kapitelweise aus docs/lastenheft/ lesen.
+- Eine abgegrenzte Aufgabe je Sitzung, nur betroffene Dateien lesen, Lastenheft kapitelweise.
+- Bilder, Build-Ausgaben, Protokolle, Datenbanken, Archive nicht lesen (gesperrt in `.claude/settings.json`).
+- Builds/Tests leise (`gradlew build -q`), volle Ausgabe nur bei Fehlern.
+- Vor dem MobaDB-Import den Nutzer erinnern: Lesesperre `*.xlsx` in `.claude/settings.json` vorübergehend entfernen, danach wieder eintragen.
 
 ## Modellwahl
 
-- Standardmodell ist Sonnet (`.claude/settings.json`).
-- Sicherheitsrelevante Kernlogik (safety/, train/, z21/, Reservierungen, Fahrstraßen, Positionsberechnung, Bremskurven, Befehlsplaner, Watchdog, Wiederanlauf, Z21-Prüfprogramm) an den Agenten **railcore-kern** (Opus) übergeben.
-- Routine (Tests, Doku, Umbenennungen, Build-Konfiguration) an **railcore-routine** (Sonnet) übergeben.
-- Ist eine ganze Sitzung überwiegend Kernlogik, dem Nutzer zu Beginn empfehlen, die Sitzung auf Opus umzustellen.
-- Für Kernaufgaben mit Hardwarezugriff die Hauptsitzung auf Opus umstellen statt railcore-kern zu verwenden. Agenten nur für Aufgaben, bei denen das Ergebnis zählt (Tests, Doku, Aufräumen, reine Simulator-Logik).
+- Standardmodell Sonnet (`.claude/settings.json`).
+- Sicherheitsrelevante Kernlogik (safety/, train/, z21/, control/, Reservierungen, Fahrstraßen, Positionsberechnung, Bremskurven, Befehlsplaner, Watchdog, Wiederanlauf, Z21-Prüfprogramm) an **railcore-kern** (Opus); Routine (Tests, Doku, Umbenennungen, Build-Konfiguration) an **railcore-routine** (Sonnet).
+- Überwiegt Kernlogik eine Sitzung: Umstellung auf Opus empfehlen. Kernaufgaben mit Hardwarezugriff: Hauptsitzung auf Opus statt railcore-kern; Agenten nur, wo das Ergebnis zählt (Tests, Doku, Aufräumen, Simulator).
 
 ## Entscheidungen
 
-- **Grundsätzliche Entscheidungen trifft immer der Nutzer:** Architektur, Sicherheit, Hardwarezugriff, neue Bibliotheken, Datenformate und jede Abweichung von CLAUDE.md oder Lastenheft. Vorher 2–3 Optionen mit Empfehlung vorlegen und erst nach Zustimmung umsetzen.
-- Umsetzungsdetails innerhalb der Regeln entscheidet Claude Code selbst und begründet sie in der Commit-Nachricht.
-- Im Zweifel fragen.
-- In `docs/ENTSCHEIDUNGEN.md` nur Einträge mit Freigabe des Nutzers (Spalte „Freigegeben“); Einträge ohne belegte Freigabe stehen auf „offen – bitte bestätigen“.
+- **Grundsätzliche Entscheidungen trifft der Nutzer:** Architektur, Sicherheit, Hardwarezugriff, neue Bibliotheken, Datenformate, jede Abweichung von CLAUDE.md/Lastenheft. Vorher 2–3 Optionen mit Empfehlung, erst nach Zustimmung umsetzen.
+- Umsetzungsdetails entscheidet Claude Code selbst, begründet in der Commit-Nachricht. Im Zweifel fragen.
+- In `docs/ENTSCHEIDUNGEN.md` nur Einträge mit Freigabe des Nutzers; unbelegte stehen auf „offen – bitte bestätigen“.
 
 ## Commits
 
-- Kleine, in sich geschlossene Commits mit deutscher Nachricht (erste Zeile = was und warum).
-- Neue Arbeit auf einem eigenen Branch, nicht direkt auf `main`.
-- Zu Beginn jeder Sitzung git fetch ausführen; gibt es auf origin/main neue Commits, den Nutzer informieren und nach Bestätigung übernehmen.
-- Pull Requests mit `gh pr merge` nur nach grünem Build (`gradlew build -q`) und ausdrücklicher Zustimmung des Nutzers mergen.
-- Merge nur, wenn die GitHub Action grün ist.
+- Kleine Commits, deutsche Nachricht (erste Zeile = was/warum); neue Arbeit auf eigenem Branch, nicht auf `main`.
+- Sitzungsbeginn: `git fetch`; neue Commits auf origin/main dem Nutzer melden, nach Bestätigung übernehmen.
+- `gh pr merge` nur nach grünem Build (`gradlew build -q`), grüner GitHub Action, Zustimmung des Nutzers.
 
 ## Stand
 
-Meilenstein 1 (Kern und Sicherheitsbasis) in Arbeit. Z21-Prüfprogramm ist fertig und an der echten Z21 passiv und aktiv gelaufen (`docs/Z21-PRUEFPROGRAMM.md`, Entscheidung 20); offen sind nur R-Bus-Zählung, Antwortzeit des Echos und die WLAN-Maus am RailCore-LAN-Server. Steuerungs-Executor und Befehlsplaner sind gebaut (Entscheidungen 23–32). Nächster Schritt: Executor und Befehlsplaner an den Z21-Adapter anschließen, Simulator und Positionsverfolgung ausbauen.
+`docs/dokumentation/ARBEITSWEISE.md`, Abschnitt „Stand“.
