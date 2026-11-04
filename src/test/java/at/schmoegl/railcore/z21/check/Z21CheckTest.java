@@ -99,6 +99,24 @@ public class Z21CheckTest {
         assertEquals(Outcome.CONFIRMED, f(r, "F29–F31").outcome());
     }
 
+    public void testPacketTypesAndLocoSamplesAreReported() {
+        sim.broadcastAt(700, sim.locoInfo(3));
+        CheckReport r = run(new ScriptedOperator());
+        assertEquals(true, f(r, "Empfangene Datensätze je Typ").detail().contains("0x40 X=0xEF"));
+        assertEquals(Outcome.CONFIRMED, f(r, "Lokmeldungen roh (Beispiele)").outcome());
+        assertEquals(true, r.find("Lokmeldungen dekodiert").isEmpty());
+    }
+
+    public void testRailComDirectionSequenceAndLastAddresses() {
+        // Lok 3 in Abschnitt Modul 5 Eingang 3: Bits 14/15 = 3, dann 2, dann Abschnitt leer
+        sim.broadcastAt(500, SimulatedZ21.packet(0xC4, 0x34, 0x12, 5, 0, 2, 0x11, 0x03, 0xC0, 0, 0));
+        sim.broadcastAt(600, SimulatedZ21.packet(0xC4, 0x34, 0x12, 5, 0, 2, 0x11, 0x03, 0x80, 0, 0));
+        sim.broadcastAt(700, SimulatedZ21.packet(0xC4, 0x34, 0x12, 5, 0, 2, 0x11, 0x00, 0x00, 0, 0));
+        CheckReport r = run(new ScriptedOperator());
+        assertEquals("Lok 3: 3 → 2", f(r, "RailCom-Richtungsbits (Verlauf je Lok)").detail());
+        assertEquals(true, f(r, "RailCom-Adressen je Abschnitt (letzte Meldung)").detail().endsWith("Eingang 3: []"));
+    }
+
     public void testClosedInputDoesNotEndObservation() {
         ScriptedOperator op = new ScriptedOperator();
         op.inputClosed = true;
