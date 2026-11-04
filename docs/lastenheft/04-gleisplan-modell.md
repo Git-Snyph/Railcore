@@ -1,0 +1,26 @@
+# 4. Gleisplan-Modell
+
+> Quelle: Dokument „RailCore – Technisches Lastenheft“ in claude.ai (https://claude.ai/artifact/EZJSUZJ3T2DzCGpGTZfaDM), Stand 03.11.2026. Maßgeblich ist das Dokument in claude.ai; Änderungen dort planen und hier nachziehen.
+
+Physik und Logik werden getrennt: Ein **Meldeabschnitt** ist ein Kabel am Melder, ein **Block** ist eine Betriebseinheit. Ein Block kann mehrere Abschnitte haben, ein Abschnitt kann eine Weiche abdecken.
+
+| Objekt | Bedeutung | Wichtige Eigenschaften |
+| --- | --- | --- |
+| Gleisgraph | Gleisstücke (Kanten) zwischen Knoten; Grundlage für Wegsuche und Position | Länge in mm, Verbindungen, Weichenzweige |
+| Meldeabschnitt | physisch isolierter Abschnitt an einem Melder-Eingang | Kontakt, Lage im Graph (von/bis mm), Ansprech- und Freimeldeverzögerung, Booster-Bezirk |
+| Block | logische Einheit, in der höchstens ein Zug steht (Ausnahme: Nachrücken, Rangieren) | Länge, Abschnitte (mind. 1, empfohlen 3), erlaubte Richtungen, Zugarten, Mindest-/Höchstzuglänge |
+| Meldepunkt | Stelle, an der ein Abschnitt anspricht; Abgleichpunkt für die Position | Lage in mm, je Fahrtrichtung |
+| Haltepunkt | Stelle, an der die Zugspitze hält | Lage je Richtung und Zugart (z. B. Bahnsteigmitte für kurze Züge) |
+| Geschwindigkeitswechselpunkt | ab hier gilt eine andere Höchstgeschwindigkeit | Lage, km/h, gilt für Zugspitze oder Zugschluss |
+| Weiche | Zubehör mit Lage | Adresse, Adressierungsmodus des Decoders (Roco oder RCN-213), Umkehrung, Belegtabschnitt, optionale physische Lagerückmeldung (zusätzliche Kontakte; der Roco 10836 schaltet nur und bestätigt keine Endlage), Stellzeit |
+| Fahrstraße | Weg von Blockende zu Blockende | Weichenlagen, Flankenschutz-Weichen, Durchrutschweg, Signal, Höchstgeschwindigkeit |
+| Signal | an einem Blockende, gilt für ausfahrende Züge | Signalbilder (Hp0, Hp1, Hp2, Sh1 …) als Folge von Zubehörbefehlen |
+| Streckenprofil | Eigenschaften eines Graphabschnitts | Steigung/Gefälle, Kurve, gelernte Korrekturfaktoren für Geschwindigkeit und Bremsweg |
+| Bahnhof, Bahnsteig | Gruppe von Blöcken als Fahrplanziel | Bahnsteiglänge, zulässige Zugarten |
+| Schattenbahnhof | Gleise aus mehreren Blöcken hintereinander | Ausfahrtende, Nachrücken, Gleiswahl nach Zuglänge und Zugart |
+| Drehscheibe | Bühne als Block, Abgänge zu Blöcken | Decoder, Positionen, Drehrichtung, Verriegelung der Zufährten |
+| Gleissperre, Baustelle | gesperrte Ressource | Grund, Zeitraum, wer gesperrt hat |
+
+Der Gleisplan wird mit einer **Prüfung** geladen: Fehler (Block ohne Melder, doppelte Adresse, unbekannte Referenz) verhindern den Automatikbetrieb, Hinweise (weniger als 3 Melder, Länge unbekannt) werden angezeigt.
+
+**Gleisplan als versioniertes Modell:** Jede Aktivierung erzeugt eine Revision; Rückgängig/Wiederherstellen im Editor; Vergleich zweier Versionen; Validierung vor jeder Aktivierung, zusätzlich auf unerreichbare Knoten, Sackgassen ohne Ausweg und Blöcke ohne Ausfahrt. Änderungen am Gleisplan sind nur in der Betriebsart „Aufbau“ möglich, also ohne Fahrbetrieb.

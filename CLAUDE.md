@@ -5,6 +5,7 @@ Ziel: bis zu 100 Züge vollautomatisch, wegbasiert und sicher fahren, mit Handbe
 
 Maßgebliche Unterlagen:
 - Technisches Lastenheft: „RailCore – Technisches Lastenheft“ (claude.ai: https://claude.ai/artifact/EZJSUZJ3T2DzCGpGTZfaDM)
+- `docs/lastenheft/` – Lastenheft als Kapitel-Dateien; nur das für die Aufgabe nötige Kapitel lesen (Inhaltsverzeichnis in README.md). Maßgeblich bleibt das Dokument in claude.ai.
 - `docs/ENTSCHEIDUNGEN.md` – Entscheidungsprotokoll. Vor jeder Architekturänderung lesen; neue Entscheidungen oben eintragen.
 - `docs/FEATURES.md` – Anforderungsübersicht
 
@@ -59,7 +60,7 @@ Logo: `docs/bilder/railcore-logo.png`. Programmsymbol: `docs/bilder/railcore-ico
 - Bilder, Build-Ausgaben, Protokolle, Datenbanken und Archive nicht lesen (gesperrt in `.claude/settings.json`).
 - Builds und Tests leise ausführen (`gradlew build -q`), vollständige Ausgaben nur bei Fehlern.
 - **Erinnerung an den Nutzer:** Bevor der MobaDB-Import (Excel) beginnt, den Nutzer darauf hinweisen, dass `Read(./**/*.xlsx)` in `.claude/settings.json` gesperrt ist und für den Import vorübergehend entfernt (und danach wieder eingetragen) werden muss.
-- Lastenheft nicht komplett lesen; bei Bedarf den betroffenen Abschnitt erfragen oder `docs/` nutzen.
+- Lastenheft nur kapitelweise aus docs/lastenheft/ lesen.
 
 ## Modellwahl
 
