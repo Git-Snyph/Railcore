@@ -15,7 +15,11 @@ Verbindlich für Anleitung, Wiki, Oberfläche und Übersetzungen. Neue Begriffe 
 | DCC-Budget | DCC budget | Zahl der Befehle pro Sekunde, die das Gleis aufnehmen kann |
 | Durchrutschweg | overlap | Gesicherte Strecke hinter einem Halt für den Fall, dass ein Zug zu weit fährt |
 | Einmessen | calibration | Messen von Geschwindigkeit je Fahrstufe, Reaktionszeit und Auslaufweg einer Lok |
+| Fahrweg (im Gleisgraph) | track path | Folge befahrener Kanten mit Fahrrichtung; bildet die Wegkoordinate in mm auf einen Ort im Gleisgraph ab |
 | Freigabe (Ende der Freigabe) | movement authority (end of authority) | Strecke, die ein Zug befahren darf; dahinter muss er stehen |
+| Gleisgraph | track graph | Knoten und Kanten mit Längen in mm, aus den verlegten Gleisstücken berechnet; Grundlage für Wegsuche und Position |
+| Gleisstück | track piece | Physisches Gleisteil mit Geometrie (gerade, Bogen, Weiche, Kreuzung, Doppelkreuzungsweiche) aus der Gleisstückbibliothek |
+| Grenzzeichen | clearance point | Stelle auf einem Weichenschenkel, ab der ein Fahrzeug den anderen Schenkel nicht mehr behindert; Pflichtangabe je Schenkel |
 | Haltepunkt | stopping point | Stelle, an der die Zugspitze halten soll |
 | Journal | journal | Protokoll aller Zustandsänderungen, Eingriffe und Störungen |
 | Meldeabschnitt | detection section | Gleisabschnitt, dessen Belegung ein Rückmelder meldet |
@@ -31,6 +35,7 @@ Verbindlich für Anleitung, Wiki, Oberfläche und Übersetzungen. Neue Begriffe 
 | Software Motion Control | software motion control | Standard: Anfahren und Bremsen rechnet die Steuerung, der Decoder verzögert nicht (CV3/CV4 = 0) |
 | Decoder Motion Control | decoder motion control | Ausnahme je Lok: der Decoder verzögert selbst |
 | Stellvertreter-Adresse | proxy address | Adresse 9000–9999 für Handregler an der Z21; RailCore fährt daraus geprüft den echten Zug |
+| Trennstelle | isolating joint | Stoß zweier Gleisstücke mit elektrischer Trennung, z. B. zwischen Meldeabschnitten |
 | unbekannt (Melder) | unknown (detector) | Zustand nach dem Start, bis der Melder eine Meldung geschickt hat; gilt nie als frei |
 | unbestätigt (Zug) | unconfirmed (train) | Zustand nach dem Start, bis die Position des Zuges bestätigt ist |
 | Wiederanlauf | restart / recovery | Rückkehr in den Betrieb nach Nothalt oder Neustart |

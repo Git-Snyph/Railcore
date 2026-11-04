@@ -43,10 +43,22 @@ Der Z21-Adapter spricht die Z21 über `z21.Z21Link` (UDP); in Tests ersetzt eine
 | `control` | Verdrahtung (`ControlRuntime`), Steuerungs-Executor, Handregler-Abfrage, Anlagenzustand und Momentaufnahme, Executor-Watchdog, Freigabe (`MovementAuthority`), Befehlsplaner (`CommandScheduler`, siehe [Befehlsplaner](befehlsplaner.md)), Zugsteuerung (`TrainDriver`) |
 | `train` | Fahrdynamik, Bremskurve, Positionsrechnung und -unsicherheit, Halteplanung |
 | `layout` | Gleisplan-Modell: Blöcke, Ausgänge, Licht, Laden aus Datei |
+| `layout.graph` | Gleisgraph (Grundmodell, Schritt B1): Gleisstückbibliothek mit Geometrie, daraus berechnete Knoten und Kanten in mm, Ort, Fahrweg, Weichenlagen als Eingabe |
 | `safety` | Betriebszustand, Melderzustand (unbekannt/frei/belegt), Melderfilter, Kommunikations-Watchdog |
 | `diag` | Journal |
 | `sim` | Simulator: Welt, Loks mit abweichenden „wahren“ Profilen, Melder, simulierte Zentrale |
 | `util` | `TimeSource`, eigene JSON-Verarbeitung |
+
+## Gleisgraph: `layout.graph`
+
+Grundmodell nach Lastenheft Kapitel 4 und Entscheidung 40 (E2, E3, E10). Reines, unveränderliches Java-Modell ohne Zustand; noch ohne Datei, Lader und Anbindung an Steuerung oder Positionsrechnung (folgt in B2–B4 und C).
+
+- **Gleisstückbibliothek** (`TrackPiece`, `TrackPieceCatalog`): gerade Stücke und Bögen (`TrackGeometry`: Länge bzw. Radius und Winkel, auch zusammengesetzt), Weiche, Kreuzung, Doppelkreuzungsweiche. Maße kommen aus dem Katalog, im Code stehen keine Herstellermaße.
+- **Graph** (`TrackGraph.Builder`): verlegte Stücke werden über ihre Anschlüsse verbunden (Stoß, Trennstelle, Gleisende); Knoten und Kanten samt Längen berechnet der Builder. Offene Anschlüsse und andere Fehler werden gesammelt gemeldet (`TrackGraphException`).
+- **Weiche** = Knoten an der Spitze mit zwei Zweigkanten eigener Länge (`TurnoutBranches`) und je Schenkel einem Grenzzeichen (Pflichtangabe, darf hinter dem Weichenende liegen). Gegen die Spitze geht es nur bei passender Lage.
+- **Ort** = (Kante, mm ab Kantenanfang); Kanten haben nur eine Bezugsrichtung, befahren werden sie gerichtet (`DirectedEdge`).
+- **Fortsetzung** hängt allein von den übergebenen Weichenlagen ab (`TurnoutStates`); unbekannte Lage heißt kein Weg. Kehrschleife und Oval brauchen keinen Sonderfall.
+- **Fahrweg** (`GraphPath`): Folge gerichteter Kanten; bildet die Wegkoordinate in mm auf einen Ort ab und zurück, lässt sich umkehren und nennt die nötigen Weichenlagen.
 
 ## Geplant
 
