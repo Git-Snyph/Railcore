@@ -57,6 +57,12 @@ public interface CommandStation extends AutoCloseable {
     /** CV eines Zubehördecoders auf dem Hauptgleis schreiben. */
     default void writeAccessoryCvOnMain(int decoderAddress, Integer output, int cv, int value) { throw new UnsupportedOperationException(name() + ": POM Zubehör nicht unterstützt"); }
 
+    /**
+     * Erkannte Fähigkeiten (Lastenheft 8). Standard: nichts erkannt. Der Adapter meldet Änderungen über
+     * {@link CommandStationListener#onCapabilities}.
+     */
+    default StationCapabilities capabilities() { return StationCapabilities.UNKNOWN; }
+
     void addListener(CommandStationListener listener);
 
     void removeListener(CommandStationListener listener);
