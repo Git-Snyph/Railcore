@@ -53,6 +53,11 @@ public final class Z21Check {
     private final TimeSource time;
 
     private final List<Z21Message> received = new ArrayList<>();
+    /** Anzahl empfangener Datensätze je LAN-Header (bei X-Bus zusätzlich X-Header), unabhängig von der Dekodierung. */
+    private final Map<String, Integer> datasetTypes = new TreeMap<>();
+    /** Rohdaten der ersten Lokmeldungen (X-Header 0xEF), um Dekodierfehler erkennen zu können. */
+    private final List<String> locoInfoSamples = new ArrayList<>();
+    private int locoInfoDatasets;
     private final List<Finding> findings = new ArrayList<>();
     private final List<Journal.Entry> protocol = new ArrayList<>();
 
@@ -254,6 +259,7 @@ public final class Z21Check {
         evaluateFlags();
         evaluateRBus();
         evaluateCan();
+        evaluatePackets();
         evaluateLocos();
         if (cfg.turnoutAddress() > 0) {
             add("Weicheninfo Adresse " + cfg.turnoutAddress(), turnoutInfo != null ? Outcome.CONFIRMED : Outcome.UNKNOWN,
@@ -330,6 +336,8 @@ public final class Z21Check {
         Map<String, TreeSet<Integer>> portsByModule = new TreeMap<>();
         Map<String, String> lastState = new TreeMap<>();
         Map<String, Map<Integer, TreeSet<Integer>>> railcomBySection = new TreeMap<>();
+        Map<String, String> lastRailCom = new TreeMap<>();
+        Map<Integer, List<Integer>> dirSequence = new TreeMap<>();
         Map<Integer, Direction> lastLocoDirection = new TreeMap<>();
         int occupancy = 0, railcom = 0, overloads = 0;
         for (Z21Message m : received) {
@@ -349,6 +357,12 @@ public final class Z21Check {
                     var byAddr = railcomBySection.computeIfAbsent(sec, k -> new TreeMap<>());
                     if (r.address1() != 0) byAddr.computeIfAbsent(r.address1(), k -> new TreeSet<>()).add(r.dirBits1());
                     if (r.address2() != 0) byAddr.computeIfAbsent(r.address2(), k -> new TreeSet<>()).add(r.dirBits2());
+                    StringJoiner now = new StringJoiner(", ", "[", "]");
+                    if (r.address1() != 0) now.add(String.valueOf(r.address1()));
+                    if (r.address2() != 0) now.add(String.valueOf(r.address2()));
+                    lastRailCom.put(sec, now.toString());
+                    if (r.address1() != 0) appendIfChanged(dirSequence, r.address1(), r.dirBits1());
+                    if (r.address2() != 0) appendIfChanged(dirSequence, r.address2(), r.dirBits2());
                 }
                 case Z21Message.Loco l -> lastLocoDirection.put(l.state().address(), l.state().direction());
                 default -> { }
@@ -384,13 +398,35 @@ public final class Z21Check {
                 });
             });
             add("RailCom-Adressen je Abschnitt", Outcome.CONFIRMED, addrs.toString(), false);
+            StringJoiner last = new StringJoiner("; ");
+            lastRailCom.forEach((sec, a) -> last.add(sec + ": " + a));
+            add("RailCom-Adressen je Abschnitt (letzte Meldung)", Outcome.CONFIRMED, last.toString(), false);
             add("RailCom-Richtungsbits", Outcome.CONFIRMED, "beobachtete Rohwerte: " + dirs
                     + ". Deutung (Aufgleisrichtung oder Fahrtrichtung) nicht gesichert", true);
+            StringJoiner seq = new StringJoiner("; ");
+            dirSequence.forEach((a, s) -> seq.add("Lok " + a + ": " + s.stream().map(String::valueOf)
+                    .collect(java.util.stream.Collectors.joining(" → "))));
+            add("RailCom-Richtungsbits (Verlauf je Lok)", Outcome.CONFIRMED, seq.toString(), true);
         }
         Map<Integer, Integer> rcData = new TreeMap<>();
         for (Z21Message m : received) if (m instanceof Z21Message.RailComData d) rcData.merge(d.locoAddress(), 1, Integer::sum);
         add("RailCom-Daten der Zentrale (LAN_RAILCOM_DATACHANGED)", rcData.isEmpty() ? Outcome.UNKNOWN : Outcome.CONFIRMED,
                 rcData.isEmpty() ? "keine Meldung" : "Meldungen je Lokadresse: " + rcData, false);
+    }
+
+    /** Hängt einen Wert nur an, wenn er sich vom letzten unterscheidet (Verlauf ohne Wiederholungen). */
+    private static void appendIfChanged(Map<Integer, List<Integer>> seq, int address, int value) {
+        List<Integer> s = seq.computeIfAbsent(address, k -> new ArrayList<>());
+        if (s.isEmpty() || s.getLast() != value) s.add(value);
+    }
+
+    private void evaluatePackets() {
+        StringJoiner sj = new StringJoiner("; ");
+        datasetTypes.forEach((k, n) -> sj.add(k + ": " + n));
+        add("Empfangene Datensätze je Typ", datasetTypes.isEmpty() ? Outcome.UNKNOWN : Outcome.CONFIRMED,
+                datasetTypes.isEmpty() ? "keine" : sj.toString(), false);
+        if (!locoInfoSamples.isEmpty())
+            add("Lokmeldungen roh (Beispiele)", Outcome.CONFIRMED, String.join(" | ", locoInfoSamples), false);
     }
 
     private void evaluateLocos() {
@@ -404,8 +440,15 @@ public final class Z21Check {
             if (l.state().address() != proxy) otherLocos.add(l.state().address());
             else if (l != proxyInfo) unsolicitedProxy++; // alles außer der Antwort auf die eigene Abfrage
         }
+        if (locoInfoDatasets > locoInfos) {
+            add("Lokmeldungen dekodiert", Outcome.NEGATIVE, locoInfoDatasets + " Lokmeldungen empfangen, aber nur "
+                    + locoInfos + " dekodiert – Rohdaten siehe „Lokmeldungen roh“", false);
+        }
         if (!otherLocos.isEmpty()) {
             add("Lok-Broadcast (alle Loks)", Outcome.CONFIRMED, "Lokmeldungen ohne Abo für Adressen " + otherLocos, false);
+        } else if (locoInfoDatasets > locoInfos) {
+            add("Lok-Broadcast (alle Loks)", Outcome.UNKNOWN,
+                    "Lokmeldungen empfangen, aber nicht dekodiert – Ursache im Prüfprogramm", false);
         } else {
             add("Lok-Broadcast (alle Loks)", Outcome.UNKNOWN,
                     "keine Lokmeldung für nicht abonnierte Adressen beobachtet (keine Lok bewegt?)", false);
@@ -811,6 +854,7 @@ public final class Z21Check {
             lastReceiveNanos = now;
             anyReceived = true;
             journal.debug(SRC, "EMPFANG", Z21Protocol.hex(p));
+            countDatasets(p);
             for (Z21Message m : Z21Protocol.decode(p, p.length)) {
                 received.add(m);
                 journal.debug(SRC, "MELDUNG", describe(m));
@@ -822,6 +866,30 @@ public final class Z21Check {
         }
         if (activeStage && now - lastReceiveNanos > cfg.linkTimeoutMs() * MS)
             throw new LinkLost("keine Meldung der Zentrale seit " + (now - lastReceiveNanos) / MS + " ms");
+    }
+
+    /** Zählt die Datensätze eines UDP-Pakets (ein Paket kann mehrere enthalten) nach Header, ohne zu dekodieren. */
+    private void countDatasets(byte[] p) {
+        int off = 0;
+        while (off + 4 <= p.length) {
+            int len = (p[off] & 0xFF) | (p[off + 1] & 0xFF) << 8;
+            if (len < 4 || off + len > p.length) {
+                datasetTypes.merge("ungültige Länge", 1, Integer::sum);
+                return;
+            }
+            int header = (p[off + 2] & 0xFF) | (p[off + 3] & 0xFF) << 8;
+            String key = String.format("0x%02X", header);
+            if (header == 0x40 && len > 4) {
+                int x = p[off + 4] & 0xFF;
+                key += String.format(" X=0x%02X", x);
+                if (x == 0xEF) {
+                    locoInfoDatasets++;
+                    if (locoInfoSamples.size() < 5) locoInfoSamples.add(Z21Protocol.hex(java.util.Arrays.copyOfRange(p, off, off + len)));
+                }
+            }
+            datasetTypes.merge(key, 1, Integer::sum);
+            off += len;
+        }
     }
 
     private void add(String topic, Outcome o, String detail, boolean verify) {
