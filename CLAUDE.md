@@ -44,7 +44,8 @@ Wenn eine Aufgabe einem dieser Grundsätze widerspricht: nicht umsetzen, sondern
 - **Niemals ohne ausdrückliche Bestätigung des Nutzers** Gleisspannung einschalten, Loks fahren, Weichen schalten oder CVs schreiben – auch nicht in Tests oder im Prüfprogramm.
 - Neue Funktionen zuerst im Simulator testen, dann Hardware-in-the-Loop, erst danach echter Betrieb.
 - Aufgaben mit Zugriff auf echte Hardware (Z21-Verbindung, Prüfprogramm, Gleisspannung, Loks, Weichen, CVs) nie an Agenten abgeben, sondern in der Hauptsitzung erledigen, damit der Nutzer jeden Schritt live sieht und eingreifen kann (Entscheidung 22).
-- Protokolldetails, die als „an Hardware zu prüfen“ markiert sind (POM-Zubehör, 10836-Adressierung, Stellvertreter-Adresse), nicht als gesichert behandeln. Geklärt (`docs/Z21-PRUEFPROGRAMM.md`): RailCom-Richtungsbits des 10808 zeigen die Aufgleisrichtung der Lok, nicht die Fahrtrichtung; die Z21 sendet trotz Abo keinen Lok-Broadcast bei Fremdsteuerung.
+- Protokolldetails, die als „an Hardware zu prüfen“ markiert sind (R-Bus-Modulzählung, Antwortzeit des Echos, WLAN-Maus am RailCore-LAN-Server), nicht als gesichert behandeln. Geklärt (`docs/Z21-PRUEFPROGRAMM.md`): RailCom-Richtungsbits des 10808 zeigen die Aufgleisrichtung der Lok, nicht die Fahrtrichtung; die Z21 sendet trotz Abo keinen Lok-Broadcast bei Fremdsteuerung; Weichenlage nach RCN-213 (P=1 gerade, P=0 abzweigend), 10836-Adressierung und POM-Lesen am Zubehördecoder bestätigt; die Z21 bestätigt eigene Fahrbefehle mit einer Lokmeldung.
+- PowerShell startet den Wrapper nur als `.\gradlew`; Befehle für den Nutzer immer so angeben.
 
 ## Code und Tests
 
@@ -90,4 +91,4 @@ Logo: `docs/bilder/railcore-logo.png`. Programmsymbol: `docs/bilder/railcore-ico
 
 ## Stand
 
-Meilenstein 1 (Kern und Sicherheitsbasis) in Arbeit. Z21-Prüfprogramm ist fertig (`docs/Z21-PRUEFPROGRAMM.md`, Entscheidung 20). Nächster Schritt: Läufe an der echten Z21 durch den Nutzer (erst passiv, dann aktiv) und Auswertung der Prüfberichte; die als „an Hardware zu prüfen“ markierten Punkte danach im Code und in der Doku als geklärt oder abweichend nachziehen. Danach Umstellung auf den zentralen Executor, Simulator und Positionsverfolgung.
+Meilenstein 1 (Kern und Sicherheitsbasis) in Arbeit. Z21-Prüfprogramm ist fertig und an der echten Z21 passiv und aktiv gelaufen (`docs/Z21-PRUEFPROGRAMM.md`, Entscheidung 20); offen sind nur R-Bus-Zählung, Antwortzeit des Echos und die WLAN-Maus am RailCore-LAN-Server. Steuerungs-Executor und Befehlsplaner sind gebaut (Entscheidungen 23–32). Nächster Schritt: Executor und Befehlsplaner an den Z21-Adapter anschließen, Simulator und Positionsverfolgung ausbauen.
