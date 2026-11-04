@@ -75,6 +75,28 @@ final class SimulatedZ21 implements Z21Transport {
     /** Meldung zu einem späteren Zeitpunkt (relativ zu jetzt) zustellen, z. B. Broadcasts während der Beobachtung. */
     void broadcastAt(long ms, byte[] p) { queue.add(new Scheduled(clock.nanoTime() + ms * 1_000_000L, p)); }
 
+    private record HandChange(int atQuery, int address, int speedByte) {}
+
+    private final List<HandChange> handChanges = new ArrayList<>();
+    private int locoQueries;
+
+    /**
+     * Ein Handregler an der Z21 ändert den Fahrzustand einer Adresse, bevor die {@code atQuery}-te Lokinfo-Abfrage
+     * beantwortet wird (1 = erste Abfrage) – wie an der echten Z21 ohne Meldung an andere Clients.
+     */
+    void handControllerBeforeQuery(int atQuery, int address, int speedByte) {
+        handChanges.add(new HandChange(atQuery, address, speedByte));
+    }
+
+    private void applyHandChanges() {
+        locoQueries++;
+        handChanges.removeIf(h -> {
+            if (h.atQuery() > locoQueries) return false;
+            locoSpeedByte.put(h.address(), h.speedByte());
+            return true;
+        });
+    }
+
     private void reply(String kind, byte[] p) {
         if (dead || silent.contains(kind)) return;
         queue.add(new Scheduled(clock.nanoTime() + replyDelayMs * 1_000_000L, p));
@@ -124,7 +146,10 @@ final class SimulatedZ21 implements Z21Transport {
         else if (xh == 0x21 && db0 == 0x81) { if (!silent.contains("power")) power = TrackPower.ON; reply("power", x(0x61, 0x01)); }
         else if (xh == 0x21 && db0 == 0x80) { if (!silent.contains("power")) power = TrackPower.OFF; reply("power", x(0x61, 0x00)); }
         else if (xh == 0xF1 && db0 == 0x0A) reply("fw", xFirmwareSupported ? x(0xF3, 0x0A, 0x01, 0x43) : x(0x61, 0x82));
-        else if (xh == 0xE3 && db0 == 0xF0) reply("loco", locoInfo(addr(p[6], p[7])));
+        else if (xh == 0xE3 && db0 == 0xF0) {
+            applyHandChanges();
+            reply("loco", locoInfo(addr(p[6], p[7])));
+        }
         else if (xh == 0xE4 && db0 == 0x13) {
             int a = addr(p[6], p[7]);
             int v = p[8] & 0xFF;

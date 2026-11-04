@@ -98,6 +98,11 @@ public final class Z21Check {
     private Z21Message.BroadcastFlags flags;
     private final Z21Message.RBusFeedback[] rbus = new Z21Message.RBusFeedback[2];
     private Z21Message.Loco proxyInfo;
+    /** Abfrage der Stellvertreter-Adresse während der Beobachtung: Zähler, offene Abfragen, Verlauf der Änderungen. */
+    private int proxyPolls, proxyAnswers, proxyPending;
+    /** Lokmeldungen, die als Antwort auf eine eigene Abfrage der Stellvertreter-Adresse gezählt wurden (Identität). */
+    private final java.util.Set<Z21Message> proxyPollAnswers = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+    private final List<String> proxyChanges = new ArrayList<>();
     private Z21Message.Turnout turnoutInfo;
     private long maxSilenceNanos;
     private final List<Long> responseTimesMs = new ArrayList<>();
@@ -200,13 +205,44 @@ public final class Z21Check {
             // Geschlossene Eingabe (keine Konsole) ist keine Bedienereingabe: Beobachtung läuft die volle Zeit.
             boolean inputClosed = op.isInputClosed();
             if (inputClosed) journal.info(SRC, "BEOBACHTUNG", "Eingabe geschlossen – Beobachtung läuft die volle Zeit");
+            long start = time.nanoTime();
+            long nextProxyPoll = start;
+            int scanned = received.size();
+            var last = proxyInfo != null ? proxyInfo.state() : null;
             while (time.nanoTime() < end) {
                 if (!inputClosed && op.poll() != null) {
                     journal.info(SRC, "BEDIENEREINGABE", "Beobachtung vorzeitig beendet");
                     break;
                 }
-                pump(Math.min(POLL_MS, Math.max(1, (end - time.nanoTime()) / MS)));
+                // Stellvertreter-Adresse regelmäßig abfragen: die Z21 meldet Handregler-Befehle nicht von sich aus.
+                if (cfg.proxyPollMs() > 0 && time.nanoTime() >= nextProxyPoll) {
+                    transmit(Z21Protocol.getLocoInfo(cfg.proxyAddress()), "Abfrage Stellvertreter-Adresse");
+                    proxyPolls++;
+                    proxyPending++;
+                    nextProxyPoll += cfg.proxyPollMs() * MS;
+                }
+                long wait = Math.min(POLL_MS, Math.max(1, (end - time.nanoTime()) / MS));
+                if (cfg.proxyPollMs() > 0) wait = Math.min(wait, Math.max(1, (nextProxyPoll - time.nanoTime()) / MS));
+                pump(wait);
                 maxSilenceNanos = Math.max(maxSilenceNanos, time.nanoTime() - lastReceiveNanos);
+                for (; scanned < received.size(); scanned++) {
+                    if (!(received.get(scanned) instanceof Z21Message.Loco l) || l.state().address() != cfg.proxyAddress()) continue;
+                    if (proxyPending > 0) {
+                        proxyPending--;
+                        proxyAnswers++;
+                        proxyPollAnswers.add(l);
+                    }
+                    var s = l.state();
+                    if (last == null || s.speedStep() != last.speedStep() || s.direction() != last.direction()
+                            || s.functions() != last.functions()) {
+                        String change = String.format("%.2f s: Fahrstufe %d, %s, Funktionen 0x%X",
+                                (time.nanoTime() - start) / 1e9, s.speedStep(),
+                                s.direction() == Direction.FORWARD ? "vorwärts" : "rückwärts", s.functions());
+                        proxyChanges.add(change);
+                        journal.info(SRC, "STELLVERTRETER_AENDERUNG", change);
+                    }
+                    last = s;
+                }
             }
         }
     }
@@ -439,7 +475,8 @@ public final class Z21Check {
             locoInfos++;
             if (l.f29to31Present()) withF29++;
             if (l.state().address() != proxy) otherLocos.add(l.state().address());
-            else if (l != proxyInfo) unsolicitedProxy++; // alles außer der Antwort auf die eigene Abfrage
+            // alles außer den Antworten auf die eigenen Abfragen (Start und regelmäßige Abfrage)
+            else if (l != proxyInfo && !proxyPollAnswers.contains(l)) unsolicitedProxy++;
         }
         if (locoInfoDatasets > locoInfos) {
             add("Lokmeldungen dekodiert", Outcome.NEGATIVE, locoInfoDatasets + " Lokmeldungen empfangen, aber nur "
@@ -476,7 +513,19 @@ public final class Z21Check {
         }
         add("Handregler-Befehle auf Stellvertreter-Adresse sichtbar", unsolicitedProxy > 0 ? Outcome.CONFIRMED : Outcome.UNKNOWN,
                 unsolicitedProxy > 0 ? unsolicitedProxy + " Lokmeldungen ohne eigene Abfrage"
-                        : "während der Beobachtung keine Lokmeldung für " + proxy + " (Maus nicht bedient?)", true);
+                        : "während der Beobachtung keine Lokmeldung für " + proxy + " ohne eigene Abfrage", true);
+        String ptopic = "Stellvertreter-Adresse per Abfrage";
+        if (proxyPolls == 0) {
+            add(ptopic, Outcome.NOT_TESTED, "Abfrage ausgeschaltet oder keine Beobachtung", true);
+        } else if (proxyAnswers == 0) {
+            add(ptopic, Outcome.UNKNOWN, proxyPolls + " Abfragen, keine Antwort", true);
+        } else if (proxyChanges.isEmpty()) {
+            add(ptopic, Outcome.UNKNOWN, proxyAnswers + " von " + proxyPolls + " Abfragen beantwortet (Abstand "
+                    + cfg.proxyPollMs() + " ms), keine Änderung – Handregler nicht bedient?", true);
+        } else {
+            add(ptopic, Outcome.CONFIRMED, proxyAnswers + " von " + proxyPolls + " Abfragen beantwortet (Abstand "
+                    + cfg.proxyPollMs() + " ms), Änderungen: " + String.join("; ", proxyChanges), true);
+        }
     }
 
     // ================================================================ Stufe 2: aktiv

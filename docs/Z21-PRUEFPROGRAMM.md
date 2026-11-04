@@ -15,7 +15,7 @@ Ergebnis: Prüfbericht `berichte/z21-pruefbericht-<Datum>-<Zeit>.txt`, vollstän
 
 ## Stufe 1 – passiv (Standard)
 
-Sendet nur Abfragen und Abos (Positivliste in `CommandClass`): Seriennummer, HW-Info, Firmware, Freischaltcode, Status, Systemzustand, Broadcast-Flags setzen und zurücklesen, R-Bus, CAN-Melder, Lokinfo der Stellvertreter-Adresse, Weicheninfo. Danach werden Melder-, RailCom- und Lokmeldungen mitgeschnitten. Während der Beobachtung bietet es sich an,
+Sendet nur Abfragen und Abos (Positivliste in `CommandClass`): Seriennummer, HW-Info, Firmware, Freischaltcode, Status, Systemzustand, Broadcast-Flags setzen und zurücklesen, R-Bus, CAN-Melder, Lokinfo der Stellvertreter-Adresse, Weicheninfo. Danach werden Melder-, RailCom- und Lokmeldungen mitgeschnitten; die Stellvertreter-Adresse wird dabei regelmäßig abgefragt (`--abfrage-ms`, Standard 250 ms, 0 = aus), weil die Z21 Handregler-Befehle nicht von sich aus meldet. Während der Beobachtung bietet es sich an,
 
 - Melder zu belegen und Loks mit RailCom auf überwachte Abschnitte zu stellen (RailCom-Adressen und Richtungsbits),
 - eine Lok mit einem Handregler zu bewegen (Lok-Broadcast, F29–F31-Byte),
@@ -61,3 +61,14 @@ Jeder Eingriff wird im Klartext angekündigt und nur nach der Eingabe `JA` (Gro�
 - **RailCom-Adresse bleibt nach Verlassen stehen.** Nach der Fahrt 17/1 → 14/8 kam für 17/1 keine RailCom-Meldung ohne Adresse; erst die Abfrage zu Beginn des nächsten Laufs zeigte den Abschnitt leer. Für den Betrieb: Eine RailCom-Adresse gilt nur, solange der Abschnitt belegt gemeldet ist.
 - RailCom-Daten der Zentrale (LAN_RAILCOM_DATACHANGED) kamen nur für 1000, 2000 und 6000, nicht für die gefahrene 8800. Ursache offen, für den Betrieb derzeit ohne Bedeutung.
 - Der 10808 meldet RailCom nur bei Änderung der Adresse im Abschnitt (82 Meldungen in 120 s, davon vermutlich 64 aus der Anfangsabfrage: 8 Module × 8 Eingänge).
+
+### 04.11.2026 – fünfter und sechster Lauf (Wartungs-App, WLAN-Maus auf 9001)
+- Fünfter Lauf (60 s): 8800 mit der Z21-Wartungs-App von Modul 15/8 in einen anderen Block und zurück nach Modul 15/8. Wieder **keine Lokmeldung** (nur die Antwort auf die eigene Abfrage 9001). Damit gilt für zwei verschiedene Clients (iTrain, Wartungs-App): Die Z21 meldet Fahrbefehle anderer Clients nicht weiter.
+- Modul 14/2 war belegt (1000 und 8888), die letzte RailCom-Meldung des Abschnitts aber leer. Für den Betrieb ist „belegt, Adresse unbekannt“ ein eigener Zustand; er gilt nie als frei und nie als bestimmter Zug.
+- Sechster Lauf (60 s): WLAN-Maus an der Z21 auf Stellvertreter-Adresse 9001 gefahren. Das Prüfprogramm hatte 9001 zu Beginn per Lokinfo abgefragt (Einzel-Abo). **Trotzdem keine Lokmeldung**, Verbindung dabei einwandfrei (Status, Systemzustand und CAN-Meldungen laufend). Die Z21 meldet also auch abonnierte Adressen nicht, wenn ein Handregler sie fährt.
+- Folge: Das Stellvertreter-Konzept für Handregler an der Z21 funktioniert nicht über Meldungen der Z21. Das Prüfprogramm fragt die Stellvertreter-Adresse deshalb jetzt regelmäßig ab; ein weiterer Lauf mit der WLAN-Maus auf 9001 soll zeigen, ob die Antwort den Zustand des Handreglers enthält und mit welcher Verzögerung.
+
+### 04.11.2026 – siebter Lauf (WLAN-Maus auf 9001, Abfrage alle 250 ms)
+- **Abfrage funktioniert:** 240 von 240 Lokinfo-Abfragen beantwortet. Jede Änderung der Maus war in der nächsten Antwort sichtbar: Fahrstufe 1–10 und zurück in beiden Richtungen, Richtungswechsel, F0 ein/aus. Verzögerung höchstens Abfrageabstand (250 ms) plus Antwortzeit.
+- Ohne eigene Abfrage kam wieder keine Lokmeldung.
+- **Geklärt:** Handregler an der Z21 auf einer Stellvertreter-Adresse lassen sich durch regelmäßiges Abfragen verfolgen; Einzel-Abo und Lok-Broadcast liefern dafür nichts. Offen: Rückschreiben des begrenzten Werts auf die Anzeige des Handreglers (aktive Prüfung) und die Last bei mehreren Stellvertreter-Adressen.
