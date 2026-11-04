@@ -26,7 +26,7 @@ public class ControlExecutorThreadTest {
         Journal journal = Journal.inMemory();
         FakeStation station = new FakeStation();
         ControlConfig cfg = ControlConfig.defaults().withTickMillis(10).withWatchdog(50, 5);
-        ControlExecutor ex = ControlExecutor.create(cfg, TimeSource.SYSTEM, journal, station, CommandSink.direct(station), List.of(1));
+        ControlExecutor ex = ControlExecutor.create(cfg, TimeSource.SYSTEM, journal, station, List.of(1));
         ex.start();
         try {
             station.connected();

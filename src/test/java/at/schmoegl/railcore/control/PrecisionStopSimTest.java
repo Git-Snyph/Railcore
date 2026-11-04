@@ -82,7 +82,9 @@ public class PrecisionStopSimTest {
         final DriveOrder order;
         TrainDriver driver;
 
-        Run(long seed, Scenario sc) {
+        Run(long seed, Scenario sc) { this(seed, sc, SchedulerConfig.defaults()); }
+
+        Run(long seed, Scenario sc, SchedulerConfig schedulerConfig) {
             Random rnd = SimWorld.randomForRun(seed);
             world = new SimWorld(clock, rnd);
             station = new SimCommandStation(world, Distribution.uniform(20, 50), 200);
@@ -99,7 +101,7 @@ public class PrecisionStopSimTest {
                             Distribution.normal(0, 3, -12, 12)));
             }
             double trueStart = Distribution.normal(0, 5, -20, 20).sample(rnd);
-            ex = ControlExecutor.create(ControlConfig.defaults(), clock, journal, station, CommandSink.direct(station),
+            ex = ControlExecutor.create(ControlConfig.defaults(), schedulerConfig, clock, journal, station,
                     List.of(CONTACT), address -> address == 3);   // Platzhalter für die Reservierung
             controller = new SimWorld.Controller() {
                 @Override public long nextDueNanos() { return ex.nextDueNanos(); }
@@ -265,6 +267,17 @@ public class PrecisionStopSimTest {
         long offGrid = drives.stream().filter(d -> d.step() > 0 && d.issuedNanos() % (50 * MS) != 0).count();
         assertTrue(offGrid > 0, "Bremsstufen zum vorausberechneten Zeitpunkt");
         assertTrue(r.driver().fixCount() == 1, "ein Abgleich am Meldepunkt");
+    }
+
+    public void testTickUpdatesRunWithTheTrainsPhaseOffset() {
+        Result r = run(11, Scenario.platform(100, 2500, 2200, 2700));
+        long phase = r.driver().phaseNanos();
+        assertEquals(TrainDriver.phaseOffsetNanos(3, 50 * MS), phase);
+        assertTrue(phase > 0 && phase < 50 * MS, "Versatz im Takt");
+        // kein Fahrbefehl auf dem Taktraster (bei einem Zug sind alle Bremsstufen ohnehin exakt eingeplant)
+        long onGrid = r.station().drives().stream().filter(d -> d.step() > 0 && d.issuedNanos() > 0
+                && d.issuedNanos() % (50 * MS) == 0).count();
+        assertEquals(0L, onGrid);
     }
 
     public void testEmergencyStopDuringApproachIsImmediateAndEndsDrive() {

@@ -24,7 +24,7 @@ public class ControlExecutorTest {
     private final Journal journal = Journal.inMemory();
     private final FakeStation station = new FakeStation();
     private final ControlExecutor ex = ControlExecutor.create(ControlConfig.defaults(), clock, journal, station,
-            CommandSink.direct(station), List.of(1, 2, 3));
+            List.of(1, 2, 3));
 
     private static Train train(String id, int address) {
         return new Train(id, "Zug " + id, address, SpeedSteps.S128, 1000, 120, 1, null);
@@ -256,7 +256,7 @@ public class ControlExecutorTest {
 
     public void testQueueOverflowTriggersEmergency() {
         ControlExecutor small = ControlExecutor.create(ControlConfig.defaults().withQueueCapacity(16), clock, journal,
-                station, CommandSink.direct(station), List.of());
+                station, List.of());
         boolean last = true;
         for (int i = 0; i < 17; i++) last = small.submit(new ControlCommand.RequestReady("Flut"));
         assertEquals(false, last);
@@ -310,14 +310,14 @@ public class ControlExecutorTest {
 
     public void testCommandGateBlocksMovementWithoutReservationAndInEmergency() {
         bringReady();
-        assertEquals(false, ex.commands().drive(3, 10, SpeedSteps.S128, Direction.FORWARD));   // keine Reservierung
-        assertEquals(true, ex.commands().drive(3, 0, SpeedSteps.S128, Direction.FORWARD));     // Halt immer erlaubt
+        assertEquals(false, ex.commands().drive(3, 10, SpeedSteps.S128, Direction.FORWARD, CommandPriority.MANUAL));   // keine Reservierung
+        assertEquals(true, ex.commands().drive(3, 0, SpeedSteps.S128, Direction.FORWARD, CommandPriority.MANUAL));     // Halt immer erlaubt
         assertEquals(List.of("drive 3 0 FORWARD"), station.sent);
 
         ex.emergencyStop("test", "Nothalt");
         heartbeatStep(10);
         assertEquals(false, ex.commands().trackPower(true));
-        assertEquals(false, ex.commands().turnout(5, TurnoutPosition.DIVERGING));
+        assertEquals(false, ex.commands().turnout(5, TurnoutPosition.DIVERGING, CommandPriority.AUTOMATIC));
         assertEquals(true, ex.commands().trackPower(false));
         assertEquals(List.of("drive 3 0 FORWARD", "power false"), station.sent);
     }

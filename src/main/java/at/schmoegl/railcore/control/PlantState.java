@@ -33,6 +33,7 @@ public final class PlantState {
     private TrackPower trackPower = TrackPower.UNKNOWN;
     private CommunicationWatchdog.Status communication = CommunicationWatchdog.Status.OK;
     private boolean emergencyLatched;
+    private SchedulerMetrics scheduler = SchedulerMetrics.EMPTY;
     private long version;
 
     PlantState(ThreadGuard guard, Journal journal, Collection<Integer> knownContacts) {
@@ -148,6 +149,13 @@ public final class PlantState {
         }
     }
 
+    /** Status des Befehlsplaners für die Momentaufnahme (nur bei Überlastwechsel und periodischem Bericht). */
+    void setScheduler(SchedulerMetrics status) {
+        guard.check("Befehlsplaner-Status setzen");
+        scheduler = java.util.Objects.requireNonNull(status);
+        version++;
+    }
+
     PlantSnapshot snapshot(long timeNanos, boolean executorStalled) {
         guard.check("Momentaufnahme erstellen");
         return build(timeNanos, executorStalled);
@@ -164,6 +172,6 @@ public final class PlantState {
         for (Train t : trains.values())
             views.put(t.id(), new PlantSnapshot.TrainView(t.id(), t.displayName(), t.address(), trainStatus.get(t.id())));
         return new PlantSnapshot(version, timeNanos, stateMachine.state(), stateMachine.reason(), emergencyLatched,
-                executorStalled, trackPower, communication, sensors, views);
+                executorStalled, trackPower, communication, sensors, views, scheduler);
     }
 }

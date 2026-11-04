@@ -4,13 +4,13 @@ import at.schmoegl.railcore.core.Direction;
 import at.schmoegl.railcore.core.SpeedSteps;
 import at.schmoegl.railcore.core.TurnoutPosition;
 import at.schmoegl.railcore.diag.Journal;
-import at.schmoegl.railcore.safety.CommunicationWatchdog;
-import at.schmoegl.railcore.safety.OperatingState;
 
 /**
  * Sicherheitsschranke vor der Befehlsausgabe; nur vom Steuerungs-Executor nutzbar. Bewegung, Einschalten der
  * Gleisspannung und Weichenstellen werden abgewiesen, solange der Anlagenzustand es nicht erlaubt (Nothalt,
- * Störung, Verbindung nicht in Ordnung). Halten (Fahrstufe 0) und Abschalten sind immer erlaubt.
+ * Störung, Verbindung nicht in Ordnung). Halten (Fahrstufe 0), Abschalten und Lokfunktionen sind immer erlaubt.
+ * Reihenfolge: Schranke → {@link CommandScheduler} → Zentrale; der Scheduler prüft dieselben Sperren beim
+ * tatsächlichen Senden erneut ({@link CommandRules}).
  * <p>
  * Bewegung braucht zusätzlich eine Reservierung (Grundsatz 2). Solange es keine Reservierungsverwaltung gibt,
  * verweigert {@link MovementAuthority#NONE} jede Bewegung.
@@ -18,57 +18,50 @@ import at.schmoegl.railcore.safety.OperatingState;
 final class GatedCommandSink implements CommandSink {
 
     private final ThreadGuard guard;
-    private final PlantState plant;
+    private final CommandRules rules;
     private final Journal journal;
     private final CommandSink target;
-    private final MovementAuthority authority;
 
-    GatedCommandSink(ThreadGuard guard, PlantState plant, Journal journal, CommandSink target, MovementAuthority authority) {
+    GatedCommandSink(ThreadGuard guard, CommandRules rules, Journal journal, CommandSink target) {
         this.guard = guard;
-        this.plant = plant;
+        this.rules = rules;
         this.journal = journal;
         this.target = target;
-        this.authority = authority;
     }
 
     @Override
-    public boolean drive(int address, int speedStep, SpeedSteps steps, Direction direction) {
+    public boolean drive(int address, int speedStep, SpeedSteps steps, Direction direction, CommandPriority priority,
+                         DriveListener listener) {
         guard.check("Fahrbefehl");
         if (speedStep > 0) {
-            String why = blocked(true);
-            if (why == null && !authority.mayMove(address)) why = "keine Reservierung";
+            String why = rules.movementBlocked(address);
             if (why != null) return reject("Fahrbefehl Lok " + address + " Stufe " + speedStep, why);
         }
-        return target.drive(address, speedStep, steps, direction);
+        return target.drive(address, speedStep, steps, direction, priority, listener);
+    }
+
+    @Override
+    public boolean function(int address, int function, boolean on, CommandPriority priority) {
+        guard.check("Lokfunktion");
+        return target.function(address, function, on, priority);
     }
 
     @Override
     public boolean trackPower(boolean on) {
         guard.check("Gleisspannung");
         if (on) {
-            String why = blocked(false);
+            String why = rules.accessoryBlocked();
             if (why != null) return reject("Gleisspannung ein", why);
         }
         return target.trackPower(on);
     }
 
     @Override
-    public boolean turnout(int address, TurnoutPosition position) {
+    public boolean turnout(int address, TurnoutPosition position, CommandPriority priority) {
         guard.check("Weiche");
-        String why = blocked(false);
+        String why = rules.accessoryBlocked();
         if (why != null) return reject("Weiche " + address + " → " + position, why);
-        return target.turnout(address, position);
-    }
-
-    /** @return Grund der Sperre oder null */
-    private String blocked(boolean movement) {
-        if (plant.emergencyLatched()) return "Nothalt nicht quittiert";
-        if (plant.communication() != CommunicationWatchdog.Status.OK) return "Verbindung zur Zentrale nicht in Ordnung";
-        OperatingState s = plant.operatingState();
-        if (movement && !s.manualMayMove()) return "Betriebszustand " + s.german();
-        if (!movement && (s == OperatingState.OFFLINE || s == OperatingState.EMERGENCY_STOP || s == OperatingState.FAULT))
-            return "Betriebszustand " + s.german();
-        return null;
+        return target.turnout(address, position, priority);
     }
 
     private boolean reject(String what, String why) {

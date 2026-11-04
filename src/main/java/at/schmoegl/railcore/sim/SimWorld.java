@@ -103,7 +103,7 @@ public final class SimWorld {
         long now = now();
         for (SimDetector d : detectors) {
             if (d.triggered()) continue;
-            for (SimLoco l : locos.values()) next = Math.min(next, l.timeOfPosition(d.triggerPositionMm(), now));
+            for (SimLoco l : candidates(d)) next = Math.min(next, l.timeOfPosition(d.triggerPositionMm(), now));
         }
         return next;
     }
@@ -144,7 +144,7 @@ public final class SimWorld {
         long now = now();
         for (SimDetector d : detectors) {
             if (d.triggered()) continue;
-            for (SimLoco l : locos.values()) {
+            for (SimLoco l : candidates(d)) {
                 if (l.position(now) >= d.triggerPositionMm() - 1e-6) {
                     d.markTriggered(now);
                     long delay = Math.round(d.delayMillis().sample(random) * 1e6);
@@ -156,6 +156,13 @@ public final class SimWorld {
                 }
             }
         }
+    }
+
+    /** Loks, die einen Meldepunkt auslösen können. */
+    private Iterable<SimLoco> candidates(SimDetector d) {
+        if (d.locoAddress() == SimDetector.ANY_LOCO) return locos.values();
+        SimLoco l = locos.get(d.locoAddress());
+        return l == null ? List.of() : List.of(l);
     }
 
     private void setClock(long t) {

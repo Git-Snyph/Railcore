@@ -26,7 +26,7 @@ public class ControlExecutorTimingTest {
     private final Journal journal = Journal.inMemory();
     private final FakeStation station = new FakeStation();
     private final ControlExecutor ex = ControlExecutor.create(ControlConfig.defaults().withJitterReportSeconds(1),
-            clock, journal, station, CommandSink.direct(station), List.of(1, 2), address -> address == 3);
+            clock, journal, station, List.of(1, 2), address -> address == 3);
 
     private static void assertTrue(boolean b, String what) {
         if (!b) throw new AssertionError(what);
@@ -156,7 +156,7 @@ public class ControlExecutorTimingTest {
     public void testEmergencyStopStaysImmediateAndBlocksScheduledMovement() {
         bringReady();
         long due = clock.nanoTime() + 30 * MS;
-        ex.schedule(due, "Fahrstufe 20", () -> ex.commands().drive(3, 20, SpeedSteps.S128, Direction.FORWARD));
+        ex.schedule(due, "Fahrstufe 20", () -> ex.commands().drive(3, 20, SpeedSteps.S128, Direction.FORWARD, CommandPriority.MANUAL));
         ex.emergencyStop("test", "Nothalt-Taste");
         assertEquals(1, station.emergencyStops.get());           // sofort, vor jedem Durchlauf
         pumpAt(due);
@@ -167,8 +167,8 @@ public class ControlExecutorTimingTest {
 
     public void testMovementAuthorityStillRequired() {
         bringReady();
-        assertEquals(true, ex.commands().drive(3, 5, SpeedSteps.S128, Direction.FORWARD));
-        assertEquals(false, ex.commands().drive(4, 5, SpeedSteps.S128, Direction.FORWARD));
+        assertEquals(true, ex.commands().drive(3, 5, SpeedSteps.S128, Direction.FORWARD, CommandPriority.MANUAL));
+        assertEquals(false, ex.commands().drive(4, 5, SpeedSteps.S128, Direction.FORWARD, CommandPriority.MANUAL));
     }
 
     // ------------------------------------------------------------------ echter Thread
@@ -178,7 +178,7 @@ public class ControlExecutorTimingTest {
         FakeStation st = new FakeStation();
         // Takt 1 s: ein Ereignis darf nicht bis zum nächsten Takt warten
         ControlConfig cfg = ControlConfig.defaults().withWatchdog(2_000, 20).withTickMillis(1_000);
-        ControlExecutor tex = ControlExecutor.create(cfg, TimeSource.SYSTEM, j, st, CommandSink.direct(st), List.of(1));
+        ControlExecutor tex = ControlExecutor.create(cfg, TimeSource.SYSTEM, j, st, List.of(1));
         tex.start();
         try {
             Thread.sleep(50);
