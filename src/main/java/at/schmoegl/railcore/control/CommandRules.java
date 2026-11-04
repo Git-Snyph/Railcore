@@ -1,5 +1,6 @@
 package at.schmoegl.railcore.control;
 
+import at.schmoegl.railcore.core.StationCapabilities;
 import at.schmoegl.railcore.safety.CommunicationWatchdog;
 import at.schmoegl.railcore.safety.OperatingState;
 
@@ -27,6 +28,28 @@ final class CommandRules {
 
     /** @return Grund, warum Gleisspannung ein bzw. Weichen stellen gesperrt ist, oder null */
     String accessoryBlocked() { return blocked(false); }
+
+    /**
+     * Fähigkeiten werden nicht vorausgesetzt (Lastenheft 8): F29–F31 nur, wenn die Zentrale sie erkennbar kann.
+     *
+     * @return Grund, warum die Funktion nicht gesendet werden kann, oder null
+     */
+    String functionUnsupported(int function) {
+        if (function < 0 || function > 31) return "Funktion außerhalb F0–F31";
+        if (function >= 29 && !plant.capabilities().has(StationCapabilities.Feature.FUNCTIONS_F29_F31))
+            return "Zentrale unterstützt F29–F31 nicht erkennbar (" + plant.capabilities().describe() + ")";
+        return null;
+    }
+
+    /**
+     * Abfragen brauchen eine antwortende Zentrale; ohne Verbindung wären sie sinnlos und würden beim Adapter
+     * scheitern. @return Grund oder null
+     */
+    String queryBlocked() {
+        if (plant.operatingState() == OperatingState.OFFLINE) return "keine Verbindung zur Zentrale";
+        if (plant.communication() == CommunicationWatchdog.Status.LOST) return "Verbindung zur Zentrale verloren";
+        return null;
+    }
 
     private String blocked(boolean movement) {
         if (plant.emergencyLatched()) return "Nothalt nicht quittiert";

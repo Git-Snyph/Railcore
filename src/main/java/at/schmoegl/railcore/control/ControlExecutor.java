@@ -2,7 +2,10 @@ package at.schmoegl.railcore.control;
 
 import at.schmoegl.railcore.core.CommandStation;
 import at.schmoegl.railcore.core.CommandStationListener;
+import at.schmoegl.railcore.core.LocoState;
+import at.schmoegl.railcore.core.StationCapabilities;
 import at.schmoegl.railcore.core.TrackPower;
+import at.schmoegl.railcore.core.TurnoutPosition;
 import at.schmoegl.railcore.diag.Journal;
 import at.schmoegl.railcore.safety.CommunicationWatchdog;
 import at.schmoegl.railcore.safety.FeedbackFilter;
@@ -63,6 +66,12 @@ public final class ControlExecutor {
         void onFeedback(int contact, boolean occupied, long timestampNanos);
     }
 
+    /** Beobachter für Lokmeldungen der Zentrale (z. B. Handregler-Abfrage), läuft auf dem Steuerungs-Thread. */
+    @FunctionalInterface
+    public interface LocoStateObserver {
+        void onLocoState(LocoState state);
+    }
+
     /** Schutz gegen eine Aufgabe, die sich endlos sofort neu einplant. */
     private static final int MAX_TIMERS_PER_PASS = 10_000;
 
@@ -104,6 +113,7 @@ public final class ControlExecutor {
     private long timerSequence;
     private final List<TickTask> tickTasks = new ArrayList<>();
     private final List<FeedbackObserver> feedbackObservers = new ArrayList<>();
+    private final List<LocoStateObserver> locoObservers = new ArrayList<>();
     private long nextTickNanos;
     private long previousTickStartNanos;
     private final TimingStatistics tickJitter = new TimingStatistics();
@@ -305,6 +315,17 @@ public final class ControlExecutor {
     public void removeFeedbackObserver(FeedbackObserver observer) {
         guard.check("Rückmelder-Beobachter abmelden");
         feedbackObservers.remove(observer);
+    }
+
+    /** Beobachter für Lokmeldungen der Zentrale anmelden (nach dem Eintragen in den Anlagenzustand aufgerufen). */
+    public void addLocoStateObserver(LocoStateObserver observer) {
+        guard.check("Lokmeldungs-Beobachter anmelden");
+        locoObservers.add(Objects.requireNonNull(observer));
+    }
+
+    public void removeLocoStateObserver(LocoStateObserver observer) {
+        guard.check("Lokmeldungs-Beobachter abmelden");
+        locoObservers.remove(observer);
     }
 
     /** Uhr des Executors (für Planungen auf dem Steuerungs-Thread). */
@@ -601,6 +622,7 @@ public final class ControlExecutor {
         plant.allSensorsUnknown(why);
         plant.setTrackPower(TrackPower.UNKNOWN);
         plant.allTrainsUnconfirmed(why);
+        plant.clearStationViews(why);
     }
 
     private void applyEmergency(String source, String reason, boolean sent) {
@@ -670,6 +692,10 @@ public final class ControlExecutor {
             return;
         }
         plant.registerTrain(r.train());
+        // Entscheidung 28 / Grundsatz 5: bekannte Lok erhält nach jedem Verbinden Halt; ist die Verbindung schon da,
+        // sofort – die Zentrale kann sie (z. B. nach einem Absturz) noch mit einer alten Fahrstufe fahren.
+        scheduler.registerKnownLoco(a, r.train().steps());
+        if (scheduler.linkUp()) scheduler.haltKnownLoco(a);
     }
 
     private void reject(String what, String why) {
@@ -696,6 +722,8 @@ public final class ControlExecutor {
             scheduler.connectionLost();
             feedback.reset();
             plant.allSensorsUnknown("Verbindung getrennt");
+            plant.setTrackPower(TrackPower.UNKNOWN);
+            plant.clearStationViews("Verbindung getrennt");
         } else if (s != OperatingState.OFFLINE) {
             connectionLost("Zentrale getrennt: " + info);
         }
@@ -716,6 +744,30 @@ public final class ControlExecutor {
         feedback.raw(contact, occupied, Math.min(ts, clock.nanoTime()));
     }
 
+    /** Lokmeldung der Zentrale: ihr Speicher (eigenes Echo, Abfrage), keine Messung am Fahrzeug. */
+    private void onLocoState(LocoState s) {
+        if (plant.operatingState() == OperatingState.OFFLINE) return;   // ohne Verbindung nicht aktuell
+        plant.setReportedLoco(s);
+        for (LocoStateObserver o : List.copyOf(locoObservers)) o.onLocoState(s);
+    }
+
+    private void onRailCom(int contact, List<Integer> addresses) {
+        if (plant.operatingState() == OperatingState.OFFLINE) return;
+        plant.setRailCom(contact, addresses);
+    }
+
+    private void onTurnout(int address, TurnoutPosition p) {
+        if (plant.operatingState() == OperatingState.OFFLINE) return;
+        plant.setReportedTurnout(address, p);
+    }
+
+    private void onCapabilities(StationCapabilities c) {
+        plant.setCapabilities(c);
+        if (c.detected() && !c.has(StationCapabilities.Feature.CAN_DETECTORS))
+            journal.warn("zentrale", "NO_CAN_DETECTORS", "Zentrale meldet keine CAN-Melder (" + c.describe()
+                    + ") – Melder bleiben „unbekannt“");
+    }
+
     /** Übersetzt Ereignisse der Zentrale (Hintergrund-Thread) in Executor-Aufgaben. */
     private final class StationListener implements CommandStationListener {
         @Override public void onConnectionChanged(boolean connected, String info) {
@@ -729,6 +781,19 @@ public final class ControlExecutor {
         }
         @Override public void onFeedback(int contact, boolean occupied, long timestampNanos) {
             enqueue("Rückmelder", () -> ControlExecutor.this.onFeedback(contact, occupied, timestampNanos));
+        }
+        @Override public void onLocoState(LocoState state) {
+            enqueue("Lokmeldung", () -> ControlExecutor.this.onLocoState(state));
+        }
+        @Override public void onRailComAddresses(int contact, List<Integer> addresses, long timestampNanos) {
+            List<Integer> copy = List.copyOf(addresses);
+            enqueue("RailCom", () -> ControlExecutor.this.onRailCom(contact, copy));
+        }
+        @Override public void onTurnoutPosition(int address, TurnoutPosition position) {
+            enqueue("Weichenmeldung", () -> ControlExecutor.this.onTurnout(address, position));
+        }
+        @Override public void onCapabilities(StationCapabilities capabilities) {
+            enqueue("Fähigkeiten", () -> ControlExecutor.this.onCapabilities(capabilities));
         }
         @Override public void onError(String message, Throwable cause) {
             journal.error("zentrale", "STATION_ERROR", message + (cause == null ? "" : " (" + cause + ")"));
