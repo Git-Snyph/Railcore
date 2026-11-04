@@ -9,3 +9,4 @@ logs/
 *.sqlite
 bin/
 berichte/
+.vscode/
