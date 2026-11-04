@@ -21,6 +21,7 @@ Stand: 03.11.2026. Eigene Modellbahn-Steuerung (Java 25), Repository Git-Snyph/R
 - [x] CAN-Belegtmelder (10808) inkl. RailCom-Lokadressen je Abschnitt
 - [x] CV lesen/schreiben: Programmiergleis, POM Lok, POM Zubehör
 - [x] Schnittstelle für weitere Zentralen (Plugin-fähig)
+- [x] Z21-Prüfprogramm: Fähigkeiten erkennen, offene Hardware-Fragen klären (`docs/Z21-PRUEFPROGRAMM.md`)
 - [ ] Weitere Zentralen (ECoS, CS3, DCC-EX …)
 
 ### Fahrzeuge und Datenbank
