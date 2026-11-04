@@ -402,7 +402,8 @@ public final class Z21Check {
             lastRailCom.forEach((sec, a) -> last.add(sec + ": " + a));
             add("RailCom-Adressen je Abschnitt (letzte Meldung)", Outcome.CONFIRMED, last.toString(), false);
             add("RailCom-Richtungsbits", Outcome.CONFIRMED, "beobachtete Rohwerte: " + dirs
-                    + ". Deutung (Aufgleisrichtung oder Fahrtrichtung) nicht gesichert", true);
+                    + ". Deutung laut Prüfung vom 04.11.2026: Aufgleisrichtung der Lok (elektrisch), nicht Fahrtrichtung;"
+                    + " welcher Wert welcher Richtung im Gleisplan entspricht, ist noch festzulegen", true);
             StringJoiner seq = new StringJoiner("; ");
             dirSequence.forEach((a, s) -> seq.add("Lok " + a + ": " + s.stream().map(String::valueOf)
                     .collect(java.util.stream.Collectors.joining(" → "))));

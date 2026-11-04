@@ -41,7 +41,7 @@ Wenn eine Aufgabe einem dieser Grundsätze widerspricht: nicht umsetzen, sondern
 
 - **Niemals ohne ausdrückliche Bestätigung des Nutzers** Gleisspannung einschalten, Loks fahren, Weichen schalten oder CVs schreiben – auch nicht in Tests oder im Prüfprogramm.
 - Neue Funktionen zuerst im Simulator testen, dann Hardware-in-the-Loop, erst danach echter Betrieb.
-- Protokolldetails, die als „an Hardware zu prüfen“ markiert sind (RailCom-Richtungsbits, POM-Zubehör, 10836-Adressierung, Stellvertreter-Adresse), nicht als gesichert behandeln.
+- Protokolldetails, die als „an Hardware zu prüfen“ markiert sind (POM-Zubehör, 10836-Adressierung, Stellvertreter-Adresse), nicht als gesichert behandeln. Geklärt (`docs/Z21-PRUEFPROGRAMM.md`): RailCom-Richtungsbits des 10808 zeigen die Aufgleisrichtung der Lok, nicht die Fahrtrichtung; die Z21 sendet trotz Abo keinen Lok-Broadcast bei Fremdsteuerung.
 
 ## Code und Tests
 
