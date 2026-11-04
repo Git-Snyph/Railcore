@@ -27,7 +27,8 @@ public enum OperatingState {
     public Set<OperatingState> allowedNext() {
         return switch (this) {
             case OFFLINE -> EnumSet.of(CONNECTING);
-            case CONNECTING -> EnumSet.of(READY, FAULT, OFFLINE);
+            // EMERGENCY_STOP nur für den Nothalt beim ersten Verbinden nach dem Programmstart (Entscheidung 34)
+            case CONNECTING -> EnumSet.of(READY, FAULT, OFFLINE, EMERGENCY_STOP);
             case READY -> EnumSet.of(RUNNING, EMERGENCY_STOP, FAULT, OFFLINE);
             case RUNNING -> EnumSet.of(STOPPING, EMERGENCY_STOP, FAULT, OFFLINE);
             case STOPPING -> EnumSet.of(READY, EMERGENCY_STOP, FAULT, OFFLINE);

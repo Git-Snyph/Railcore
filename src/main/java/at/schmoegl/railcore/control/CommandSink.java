@@ -53,4 +53,12 @@ public interface CommandSink {
 
     /** Weiche/Signal stellen; der Schaltimpuls bleibt Sache des Adapters, zählt aber zum DCC-Budget. */
     boolean turnout(int address, TurnoutPosition position, CommandPriority priority);
+
+    /**
+     * Lokzustand bei der Zentrale abfragen (z. B. Stellvertreter-Adressen der Handregler). Die Abfrage erzeugt kein
+     * DCC-Paket auf dem Gleis und verbraucht deshalb kein DCC-Budget; sie steht aber in der Vorrangreihenfolge hinter
+     * allen höher eingestuften wartenden Befehlen. Wartende Abfragen derselben Adresse werden zusammengefasst, nie
+     * als „unverändert“ unterdrückt. Die Antwort kommt als Lokmeldung über den Steuerungs-Executor.
+     */
+    boolean requestLocoState(int address, CommandPriority priority);
 }

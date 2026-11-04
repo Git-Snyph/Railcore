@@ -35,5 +35,8 @@ public interface CommandStationListener {
     /** CV-Operation fehlgeschlagen (keine Antwort vom Decoder oder Kurzschluss). */
     default void onCvFailed(String reason) {}
 
+    /** Fähigkeiten der Zentrale wurden (neu) erkannt, z. B. nach Abfrage der Firmware. */
+    default void onCapabilities(StationCapabilities capabilities) {}
+
     default void onError(String message, Throwable cause) {}
 }

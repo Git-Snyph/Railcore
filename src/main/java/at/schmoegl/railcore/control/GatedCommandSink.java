@@ -43,7 +43,17 @@ final class GatedCommandSink implements CommandSink {
     @Override
     public boolean function(int address, int function, boolean on, CommandPriority priority) {
         guard.check("Lokfunktion");
+        String why = rules.functionUnsupported(function);
+        if (why != null) return reject("Funktion F" + function + " Lok " + address, why);
         return target.function(address, function, on, priority);
+    }
+
+    @Override
+    public boolean requestLocoState(int address, CommandPriority priority) {
+        guard.check("Lokzustand abfragen");
+        String why = rules.queryBlocked();
+        if (why != null) return reject("Abfrage Lok " + address, why);
+        return target.requestLocoState(address, priority);
     }
 
     @Override

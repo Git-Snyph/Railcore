@@ -40,8 +40,10 @@ import java.util.function.LongSupplier;
  *       einem anderen Thread ausgelöster Nothalt wird nach einer gesendeten Fahrt sofort wiederholt.</li>
  *   <li><b>Nothalt</b> läuft nie hierüber; {@link #onEmergency} verwirft wartende Fahrten und erklärt alle
  *       gesendeten Zustände für unbestätigt.</li>
- *   <li><b>Neuverbinden</b>: alle Zustände unbestätigt, für jede bekannte Lok wird einmalig Halt neu übertragen
- *       (nie Fahrstufe &gt; 0 ohne die Schranke).</li>
+ *   <li><b>Neuverbinden</b>: alle Zustände unbestätigt, für jede bekannte Lok (gesendet oder als angemeldeter Zug
+ *       eingetragen, {@link #registerKnownLoco}) wird einmalig Halt neu übertragen (nie Fahrstufe &gt; 0 ohne die
+ *       Schranke).</li>
+ *   <li><b>Abfragen</b> ({@link #requestLocoState}) kosten kein DCC-Budget, warten aber in der Vorrangreihenfolge.</li>
  *   <li><b>Überlast</b> wird erkannt und gemeldet (Journal gedrosselt, Momentaufnahme); Sicherheit hat Vorrang,
  *       Komfort wird zurückgestellt. Züge werden <i>nicht</i> ausgebremst (folgt in Meilenstein 4).</li>
  * </ul>
@@ -52,16 +54,23 @@ public final class CommandScheduler implements CommandSink {
     private static final double EPS = 1e-9;
     private static final long SECOND = 1_000_000_000L;
 
-    private enum Kind { DRIVE, FUNCTION, TURNOUT }
+    private enum Kind { DRIVE, FUNCTION, TURNOUT, QUERY }
 
     private record Key(Kind kind, int address, int index) {}
 
     private record DriveValue(int step, Direction direction, SpeedSteps steps) {}
 
+    /** Wert einer Lokzustands-Abfrage (kein DCC-Paket, Kosten 0). */
+    private record Query() {}
+
+    private static final Query QUERY_VALUE = new Query();
+
     private static final class Slot {
         final Key key;
         Object sent;                    // zuletzt gesendeter Wert, null = nie
         boolean confirmed;
+        /** Bekannte Lok (angemeldeter Zug) ohne gesendeten Wert: erhält nach dem Verbinden trotzdem Halt. */
+        SpeedSteps knownSteps;
         long lastCommandNanos = Long.MIN_VALUE;
         Pending pending;
 
@@ -131,6 +140,7 @@ public final class CommandScheduler implements CommandSink {
     // Token-Bucket
     private double budget;
     private int activeLocos;
+    private int externalActive;
     private double tokens;
     private long lastRefillNanos;
 
@@ -239,6 +249,18 @@ public final class CommandScheduler implements CommandSink {
                 DriveListener.NONE, "Weiche " + address + " → " + position);
     }
 
+    /**
+     * Lokzustands-Abfrage: kein DCC-Paket, Kosten 0 Budget-Einheiten; sie wartet trotzdem in der Vorrangreihenfolge
+     * hinter höher eingestuften Befehlen, denen Tokens fehlen. Nie als „unverändert“ unterdrückt.
+     */
+    @Override
+    public boolean requestLocoState(int address, CommandPriority priority) {
+        guard.check("Abfrage planen");
+        requireQueued(priority);
+        return submit(new Key(Kind.QUERY, address, 0), QUERY_VALUE, priority, 0, DriveListener.NONE,
+                "Abfrage Lok " + address);
+    }
+
     /** Gleisspannung ist kein DCC-Paket: ohne Warteschlange, sofort. */
     @Override
     public boolean trackPower(boolean on) {
@@ -299,7 +321,7 @@ public final class CommandScheduler implements CommandSink {
     void onTick(long now) {
         guard.check("Befehlsplaner-Takt");
         refill(now);
-        int active = countActive(now);
+        int active = countActive(now) + externalActive;
         activeLocos = active;
         double model = config.budgetPerSecond(active);
         double corrected = correction.correct(model);
@@ -356,9 +378,10 @@ public final class CommandScheduler implements CommandSink {
         int n = 0;
         for (Slot s : slots.values()) {
             s.confirmed = false;
-            if (s.key.kind() != Kind.DRIVE || !(s.sent instanceof DriveValue d) || s.pending != null) continue;
-            Pending p = new Pending(s, now, seq++, 1, CommandPriority.SAFETY, new DriveValue(0, d.direction(), d.steps()),
-                    DriveListener.NONE);
+            if (s.key.kind() != Kind.DRIVE || s.pending != null) continue;
+            DriveValue halt = haltFor(s);
+            if (halt == null) continue;
+            Pending p = new Pending(s, now, seq++, 1, CommandPriority.SAFETY, halt, DriveListener.NONE);
             s.pending = p;
             queue.add(p);
             n++;
@@ -371,6 +394,57 @@ public final class CommandScheduler implements CommandSink {
                     + " Loks wird einmalig Halt neu übertragen (Zustand der Zentrale unbestätigt)");
         }
         tryDispatch();
+    }
+
+    /**
+     * Bekannte Lok (angemeldeter Zug) eintragen: Sie erhält nach jedem (Neu-)Verbinden einmal Halt, auch wenn ihr in
+     * dieser Sitzung noch nie ein Befehl gesendet wurde (Entscheidung 28, Grundsatz 5: nach einem Absturz kann die
+     * Zentrale sie noch mit der letzten Fahrstufe fahren). Sendet selbst nichts.
+     */
+    void registerKnownLoco(int address, SpeedSteps steps) {
+        guard.check("Bekannte Lok eintragen");
+        Slot s = slots.computeIfAbsent(new Key(Kind.DRIVE, address, 0), Slot::new);
+        s.knownSteps = Objects.requireNonNull(steps);
+    }
+
+    /**
+     * Einmal Halt für eine bekannte Lok einreihen (Sicherheit), z. B. wenn ein Zug bei bestehender Verbindung
+     * angemeldet wird. Richtung: zuletzt gesendet, sonst von der Zentrale gemeldet, sonst vorwärts.
+     */
+    void haltKnownLoco(int address) {
+        guard.check("Halt bekannte Lok");
+        Key key = new Key(Kind.DRIVE, address, 0);
+        Slot s = slots.get(key);
+        if (s == null) return;
+        DriveValue halt = haltFor(s);
+        if (halt == null) return;
+        submit(key, halt, CommandPriority.SAFETY, 1, DriveListener.NONE, "Halt bekannte Lok " + address);
+    }
+
+    /** Halt mit der bekannten Richtung; null, wenn weder gesendet noch als bekannte Lok eingetragen. */
+    private DriveValue haltFor(Slot s) {
+        if (s.sent instanceof DriveValue d) return new DriveValue(0, d.direction(), d.steps());
+        if (s.knownSteps == null) return null;
+        // Entscheidung 33 (3): nie angesprochen → zuletzt gemeldete Richtung, sonst vorwärts, ohne vorherige Abfrage
+        // (kein Verzug; bei einer stehenden Lok wechselt höchstens Licht oder Richtung)
+        Direction dir = plant.reportedLoco(s.key.address()).map(l -> l.direction()).orElse(Direction.FORWARD);
+        return new DriveValue(0, dir, s.knownSteps);
+    }
+
+    /** Ist die Verbindung laut Befehlsplaner da (seit Start bzw. Verlust neu verbunden)? */
+    boolean linkUp() {
+        guard.check("Verbindung lesen");
+        return !linkDown;
+    }
+
+    /**
+     * Zahl der Adressen, die die Zentrale ohne uns fährt (Handregler auf Stellvertreter-Adressen mit Fahrstufe &gt; 0):
+     * Die Zentrale frischt sie auf dem Gleis auf, das kostet DCC-Kapazität. Zählt im nächsten Takt zu den aktiven Loks.
+     */
+    void setExternalActiveLocos(int count) {
+        guard.check("Fremd aktive Loks setzen");
+        if (count < 0) throw new IllegalArgumentException("Anzahl negativ: " + count);
+        externalActive = count;
     }
 
     /** Eingang für die spätere Echo-Nachführung; derzeit ohne Wirkung ({@link BudgetCorrection#NONE}). */
@@ -412,8 +486,10 @@ public final class CommandScheduler implements CommandSink {
         window.submitted++;
         // Bedarf der Bremskurven: jede Absenkung (planmäßig als Automatik) und jeder Sicherheitsbefehl
         if (priority == CommandPriority.SAFETY || isReduction(value, slot.sent)) demandCount++;
-        // Weichen nie unterdrücken (keine Endlagenmeldung, Entscheidung 12/28); wartend wird trotzdem zusammengefasst
-        if (key.kind() != Kind.TURNOUT && slot.confirmed && value.equals(slot.sent)) {
+        // Weichen nie unterdrücken (keine Endlagenmeldung, Entscheidung 12/28), Abfragen ebenso nicht (sie sollen eine
+        // frische Antwort holen); wartend wird trotzdem zusammengefasst
+        boolean suppressible = key.kind() == Kind.DRIVE || key.kind() == Kind.FUNCTION;
+        if (suppressible && slot.confirmed && value.equals(slot.sent)) {
             if (p != null) {                       // neuester Wert = Zustand der Zentrale: Wartendes entfällt
                 queue.remove(p);
                 slot.pending = null;
@@ -599,6 +675,16 @@ public final class CommandScheduler implements CommandSink {
                 }
                 station.setTurnout(s.key.address(), pos);
                 markSent(p, pos);
+            }
+            case Query q -> {
+                String why = linkDown ? "Verbindung nicht hergestellt" : rules.queryBlocked();
+                if (why != null) {                 // Verbindung inzwischen weg: Abfrage entfällt (Kosten 0)
+                    countDropped();
+                    journal.debug("befehle", "COMMAND_DROPPED", "Abfrage Lok " + s.key.address() + " entfällt: " + why);
+                    return;
+                }
+                station.requestLocoState(s.key.address());
+                markSent(p, q);
             }
             default -> throw new IllegalStateException("Unbekannter Befehlswert " + p.value);
         }

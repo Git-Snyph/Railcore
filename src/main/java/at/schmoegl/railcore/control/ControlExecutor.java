@@ -2,7 +2,10 @@ package at.schmoegl.railcore.control;
 
 import at.schmoegl.railcore.core.CommandStation;
 import at.schmoegl.railcore.core.CommandStationListener;
+import at.schmoegl.railcore.core.LocoState;
+import at.schmoegl.railcore.core.StationCapabilities;
 import at.schmoegl.railcore.core.TrackPower;
+import at.schmoegl.railcore.core.TurnoutPosition;
 import at.schmoegl.railcore.diag.Journal;
 import at.schmoegl.railcore.safety.CommunicationWatchdog;
 import at.schmoegl.railcore.safety.FeedbackFilter;
@@ -63,6 +66,12 @@ public final class ControlExecutor {
         void onFeedback(int contact, boolean occupied, long timestampNanos);
     }
 
+    /** Beobachter für Lokmeldungen der Zentrale (z. B. Handregler-Abfrage), läuft auf dem Steuerungs-Thread. */
+    @FunctionalInterface
+    public interface LocoStateObserver {
+        void onLocoState(LocoState state);
+    }
+
     /** Schutz gegen eine Aufgabe, die sich endlos sofort neu einplant. */
     private static final int MAX_TIMERS_PER_PASS = 10_000;
 
@@ -91,6 +100,9 @@ public final class ControlExecutor {
     private final AtomicLong latestHeartbeat = new AtomicLong(NO_HEARTBEAT);
     private final CommandStationListener stationListener = new StationListener();
 
+    private volatile boolean emergencyOnFirstConnect;
+    private boolean firstConnectDone;             // nur Steuerungs-Thread
+    private final java.util.concurrent.atomic.AtomicBoolean orderlyDisconnect = new java.util.concurrent.atomic.AtomicBoolean();
     private volatile long lastTickNanos;
     private volatile boolean stalled;
     private volatile PlantSnapshot snapshot;
@@ -104,6 +116,7 @@ public final class ControlExecutor {
     private long timerSequence;
     private final List<TickTask> tickTasks = new ArrayList<>();
     private final List<FeedbackObserver> feedbackObservers = new ArrayList<>();
+    private final List<LocoStateObserver> locoObservers = new ArrayList<>();
     private long nextTickNanos;
     private long previousTickStartNanos;
     private final TimingStatistics tickJitter = new TimingStatistics();
@@ -194,7 +207,13 @@ public final class ControlExecutor {
      * Nachziehen des Zustands vorrangig ein. Schlägt das Senden fehl, wird das protokolliert und der Zustand trotzdem
      * auf Nothalt bzw. Störung gesetzt.
      */
-    public void emergencyStop(String source, String reason) {
+    public void emergencyStop(String source, String reason) { sendEmergencyStop(source, reason); }
+
+    /** Wie {@link #emergencyStop}; @return true, wenn der Nothalt an die Zentrale gesendet werden konnte */
+    boolean sendEmergencyStop(String source, String reason) { return sendEmergencyStop(source, reason, false); }
+
+    /** @param startup Nothalt beim ersten Verbinden nach dem Programmstart (Entscheidungen 33, 34) */
+    private boolean sendEmergencyStop(String source, String reason, boolean startup) {
         emergencyEpoch.incrementAndGet();   // vor dem Senden: der Befehlsplaner sendet danach keine Fahrt mehr
         boolean sent;
         try {
@@ -206,9 +225,23 @@ public final class ControlExecutor {
             journal.critical("nothalt", "EMERGENCY_STOP_SEND_FAILED", "Nothalt konnte nicht gesendet werden (" + source + "): " + reason + " – " + e);
         }
         boolean wasSent = sent;
-        urgent.add(new Task("Nothalt nachziehen", () -> applyEmergency(source, reason, wasSent)));
+        urgent.add(new Task("Nothalt nachziehen", () -> applyEmergency(source, reason, wasSent, startup)));
         queue.offer(WAKE);
+        return sent;
     }
+
+    /**
+     * Entscheidung 33 (2): Beim ersten Verbinden dieses Executors zusätzlich Nothalt für die ganze Anlage (auch Loks,
+     * die RailCore nicht kennt). Vor dem Start bzw. vor dem ersten Schritt aufrufen (ControlRuntime).
+     */
+    void enableEmergencyStopOnFirstConnect() { emergencyOnFirstConnect = true; }
+
+    /**
+     * Geordnetes Trennen: Der Nothalt wurde unmittelbar vorher erfolgreich gesendet. Die folgende Trennmeldung der
+     * Zentrale löst dann keinen weiteren (an den geschlossenen Adapter zwangsläufig scheiternden) Nothalt aus; der
+     * gesetzte Nothalt und alle übrigen Folgen des Verbindungsverlusts bleiben.
+     */
+    void markOrderlyDisconnect() { orderlyDisconnect.set(true); }
 
     /** Hat der Executor-Watchdog einen Hänger erkannt? */
     public boolean isStalled() { return stalled; }
@@ -305,6 +338,17 @@ public final class ControlExecutor {
     public void removeFeedbackObserver(FeedbackObserver observer) {
         guard.check("Rückmelder-Beobachter abmelden");
         feedbackObservers.remove(observer);
+    }
+
+    /** Beobachter für Lokmeldungen der Zentrale anmelden (nach dem Eintragen in den Anlagenzustand aufgerufen). */
+    public void addLocoStateObserver(LocoStateObserver observer) {
+        guard.check("Lokmeldungs-Beobachter anmelden");
+        locoObservers.add(Objects.requireNonNull(observer));
+    }
+
+    public void removeLocoStateObserver(LocoStateObserver observer) {
+        guard.check("Lokmeldungs-Beobachter abmelden");
+        locoObservers.remove(observer);
     }
 
     /** Uhr des Executors (für Planungen auf dem Steuerungs-Thread). */
@@ -593,21 +637,37 @@ public final class ControlExecutor {
         lastComm = s;
     }
 
-    private void connectionLost(String why) {
-        emergencyStop("verbindung", why);
+    private void connectionLost(String why) { connectionLost(why, false); }
+
+    /** @param stopAlreadySent geordnetes Trennen: Nothalt wurde unmittelbar vorher erfolgreich gesendet */
+    private void connectionLost(String why, boolean stopAlreadySent) {
+        if (stopAlreadySent) {
+            journal.info("nothalt", "EMERGENCY_STOP_BEFORE_DISCONNECT", "Geordnetes Trennen: Nothalt wurde vor dem Trennen "
+                    + "gesendet, kein weiterer Nothalt an die getrennte Zentrale (" + why + ")");
+        } else {
+            emergencyStop("verbindung", why);
+        }
         scheduler.connectionLost();
         enterFault("verbindung", why);
         feedback.reset();
         plant.allSensorsUnknown(why);
         plant.setTrackPower(TrackPower.UNKNOWN);
         plant.allTrainsUnconfirmed(why);
+        plant.clearStationViews(why);
     }
 
-    private void applyEmergency(String source, String reason, boolean sent) {
+    /** Grund im Zustand und in der Momentaufnahme beim Nothalt nach dem Programmstart (Entscheidung 34). */
+    static final String STARTUP_REASON = "Programmstart";
+
+    private void applyEmergency(String source, String reason, boolean sent, boolean startup) {
         plant.latchEmergency(source + ": " + reason);
         scheduler.onEmergency();
-        if (plant.operatingState() != OperatingState.FAULT
-                && !plant.transition(OperatingState.EMERGENCY_STOP, "Nothalt (" + source + "): " + reason)) {
+        OperatingState s = plant.operatingState();
+        // „Verbinde → Nothalt“ gibt es nur für den Nothalt beim Programmstart (Entscheidung 34); jeder andere Nothalt
+        // im Zustand „Verbinde“ führt wie bisher nach „Störung“.
+        boolean allowed = s != OperatingState.CONNECTING || startup;
+        String why = startup ? STARTUP_REASON + ": " + reason : "Nothalt (" + source + "): " + reason;
+        if (s != OperatingState.FAULT && !(allowed && plant.transition(OperatingState.EMERGENCY_STOP, why))) {
             enterFault(source, "Nothalt im Zustand " + plant.operatingState().german() + ": " + reason);
         }
         if (!sent) enterFault(source, "Nothalt konnte nicht an die Zentrale gesendet werden");
@@ -670,6 +730,10 @@ public final class ControlExecutor {
             return;
         }
         plant.registerTrain(r.train());
+        // Entscheidung 28 / Grundsatz 5: bekannte Lok erhält nach jedem Verbinden Halt; ist die Verbindung schon da,
+        // sofort – die Zentrale kann sie (z. B. nach einem Absturz) noch mit einer alten Fahrstufe fahren.
+        scheduler.registerKnownLoco(a, r.train().steps());
+        if (scheduler.linkUp()) scheduler.haltKnownLoco(a);
     }
 
     private void reject(String what, String why) {
@@ -680,13 +744,22 @@ public final class ControlExecutor {
 
     private void onConnection(boolean connected, String info) {
         OperatingState s = plant.operatingState();
+        boolean orderly = orderlyDisconnect.getAndSet(false);
         if (connected) {
             if (s == OperatingState.OFFLINE) {
                 communication.reset();
                 lastComm = CommunicationWatchdog.Status.OK;
                 plant.setCommunication(CommunicationWatchdog.Status.OK);
                 plant.transition(OperatingState.CONNECTING, "Verbunden mit " + info);
-                scheduler.connectionRestored();
+                if (emergencyOnFirstConnect && !firstConnectDone) {
+                    // Entscheidung 33 (2) / Grundsatz 5: nach dem Programmstart steht nichts als gesichert fest – auch
+                    // Loks, die RailCore nicht kennt, müssen stehen. Nothalt am Befehlsplaner vorbei, nur Quittieren hebt
+                    // ihn auf (Sperre aus Entscheidung 23). Zustand „Nothalt“ mit Grund „Programmstart“ (Entscheidung 34).
+                    sendEmergencyStop("verbindung", "Programmstart – erstes Verbinden, Nothalt für die ganze Anlage "
+                            + "(Entscheidung 33), bitte quittieren", true);
+                }
+                firstConnectDone = true;
+                scheduler.connectionRestored();     // zusätzlich Halt je bekannter Lok (Entscheidung 28)
             } else {
                 journal.info("zentrale", "CONNECTED", "Verbindung gemeldet im Zustand " + s.german() + ": " + info);
                 scheduler.connectionRestored();   // nach Verlust: Halt einmalig neu übertragen (Zustand bleibt Störung)
@@ -696,8 +769,10 @@ public final class ControlExecutor {
             scheduler.connectionLost();
             feedback.reset();
             plant.allSensorsUnknown("Verbindung getrennt");
+            plant.setTrackPower(TrackPower.UNKNOWN);
+            plant.clearStationViews("Verbindung getrennt");
         } else if (s != OperatingState.OFFLINE) {
-            connectionLost("Zentrale getrennt: " + info);
+            connectionLost("Zentrale getrennt: " + info, orderly);
         }
     }
 
@@ -708,12 +783,36 @@ public final class ControlExecutor {
         if (p == TrackPower.SHORT_CIRCUIT) {
             enterFault("zentrale", "Zentrale meldet Kurzschluss");
         } else if (p == TrackPower.EMERGENCY_STOP && operating) {
-            applyEmergency("zentrale", "Zentrale meldet Nothalt", true);
+            applyEmergency("zentrale", "Zentrale meldet Nothalt", true, false);
         }
     }
 
     private void onFeedback(int contact, boolean occupied, long ts) {
         feedback.raw(contact, occupied, Math.min(ts, clock.nanoTime()));
+    }
+
+    /** Lokmeldung der Zentrale: ihr Speicher (eigenes Echo, Abfrage), keine Messung am Fahrzeug. */
+    private void onLocoState(LocoState s) {
+        if (plant.operatingState() == OperatingState.OFFLINE) return;   // ohne Verbindung nicht aktuell
+        plant.setReportedLoco(s);
+        for (LocoStateObserver o : List.copyOf(locoObservers)) o.onLocoState(s);
+    }
+
+    private void onRailCom(int contact, List<Integer> addresses) {
+        if (plant.operatingState() == OperatingState.OFFLINE) return;
+        plant.setRailCom(contact, addresses);
+    }
+
+    private void onTurnout(int address, TurnoutPosition p) {
+        if (plant.operatingState() == OperatingState.OFFLINE) return;
+        plant.setReportedTurnout(address, p);
+    }
+
+    private void onCapabilities(StationCapabilities c) {
+        plant.setCapabilities(c);
+        if (c.detected() && !c.has(StationCapabilities.Feature.CAN_DETECTORS))
+            journal.warn("zentrale", "NO_CAN_DETECTORS", "Zentrale meldet keine CAN-Melder (" + c.describe()
+                    + ") – Melder bleiben „unbekannt“");
     }
 
     /** Übersetzt Ereignisse der Zentrale (Hintergrund-Thread) in Executor-Aufgaben. */
@@ -729,6 +828,19 @@ public final class ControlExecutor {
         }
         @Override public void onFeedback(int contact, boolean occupied, long timestampNanos) {
             enqueue("Rückmelder", () -> ControlExecutor.this.onFeedback(contact, occupied, timestampNanos));
+        }
+        @Override public void onLocoState(LocoState state) {
+            enqueue("Lokmeldung", () -> ControlExecutor.this.onLocoState(state));
+        }
+        @Override public void onRailComAddresses(int contact, List<Integer> addresses, long timestampNanos) {
+            List<Integer> copy = List.copyOf(addresses);
+            enqueue("RailCom", () -> ControlExecutor.this.onRailCom(contact, copy));
+        }
+        @Override public void onTurnoutPosition(int address, TurnoutPosition position) {
+            enqueue("Weichenmeldung", () -> ControlExecutor.this.onTurnout(address, position));
+        }
+        @Override public void onCapabilities(StationCapabilities capabilities) {
+            enqueue("Fähigkeiten", () -> ControlExecutor.this.onCapabilities(capabilities));
         }
         @Override public void onError(String message, Throwable cause) {
             journal.error("zentrale", "STATION_ERROR", message + (cause == null ? "" : " (" + cause + ")"));
