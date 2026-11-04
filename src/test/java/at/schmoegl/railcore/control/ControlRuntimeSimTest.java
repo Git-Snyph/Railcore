@@ -47,7 +47,8 @@ public class ControlRuntimeSimTest {
         assertEquals(List.of(), station.drives());                              // offline nichts gesendet
         rt.connect();
         runMs(100);
-        assertEquals(OperatingState.CONNECTING, rt.snapshot().operatingState());
+        assertEquals(OperatingState.FAULT, rt.snapshot().operatingState());   // Entscheidung 33: Nothalt beim ersten Verbinden
+        assertEquals(1, station.emergencyStops());
         assertEquals(Set.of(3, 4), Set.copyOf(station.drives().stream().map(SimCommandStation.SentDrive::address).toList()));
         assertTrue(station.drives().stream().allMatch(d -> d.step() == 0), "nur Halt, nie eine Fahrstufe");
         assertEquals(SensorState.UNKNOWN, rt.snapshot().sensor(1));
@@ -65,12 +66,12 @@ public class ControlRuntimeSimTest {
         Thread ui = new Thread(() -> rt.emergencyStop("Test", "Nothalt-Taste"), "oberflaeche");
         ui.start();
         ui.join();
-        assertEquals(1, station.emergencyStops());                              // sofort, ohne Executor-Schritt
+        assertEquals(2, station.emergencyStops());                              // sofort, ohne Executor-Schritt (1 = erstes Verbinden)
         runMs(10);
         assertEquals(true, rt.snapshot().emergencyLatched());
 
         rt.disconnect();                                                         // verbunden: vorher erneut Nothalt
-        assertEquals(2, station.emergencyStops());
+        assertEquals(3, station.emergencyStops());
         runMs(10);
         assertEquals(OperatingState.FAULT, rt.snapshot().operatingState());     // Nothalt aus „Verbinde“ = Störung
         assertEquals(true, rt.snapshot().emergencyLatched());                    // nie automatisch aufgehoben

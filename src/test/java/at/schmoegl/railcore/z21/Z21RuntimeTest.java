@@ -81,10 +81,67 @@ public class Z21RuntimeTest {
     private void bringReady() {
         connect();
         run(20);
-        assertEquals(OperatingState.CONNECTING, rt.snapshot().operatingState());
+        // Entscheidung 33 (2): erstes Verbinden → Nothalt für die ganze Anlage, erst quittieren
+        assertEquals(true, rt.snapshot().emergencyLatched());
+        rt.submit(new ControlCommand.AcknowledgeEmergency("Test"));
+        run(5);
+        assertEquals(OperatingState.RECOVERY, rt.snapshot().operatingState());
         rt.submit(new ControlCommand.RequestReady("Test"));
         run(5);
         assertEquals(OperatingState.READY, rt.snapshot().operatingState());
+    }
+
+    // ------------------------------------------------------------------ Entscheidung 33
+
+    public void testFirstConnectSendsGlobalStopAndBlocksUntilAcknowledged() {
+        rt.submit(new ControlCommand.RegisterTrain(train("A", 3), "Test"));
+        connect();
+        run(20);
+        assertEquals(1L, z21.count(STOP_ALL));                                    // Nothalt für die ganze Anlage
+        assertEquals(1L, z21.count(drive(3, 0, Direction.FORWARD)));             // zusätzlich Halt je bekannter Lok
+        PlantSnapshot s = rt.snapshot();
+        assertEquals(true, s.emergencyLatched());
+        assertEquals(OperatingState.FAULT, s.operatingState());                   // aus „Verbinde“ laut Zustandsmodell
+        assertTrue(journal.byCode("EMERGENCY_STOP_SENT").stream().anyMatch(e -> e.message().contains("Entscheidung 33")),
+                "Ursache im Journal");
+
+        assertEquals(false, ex.commands().drive(3, 5, SpeedSteps.S128, Direction.FORWARD, CommandPriority.MANUAL));
+        run(1_000);
+        assertEquals(0L, z21.count(drive(3, 5, Direction.FORWARD)));             // keine Fahrt bis zum Quittieren
+        assertEquals(true, rt.snapshot().emergencyLatched());                    // nie automatisch aufgehoben
+
+        rt.submit(new ControlCommand.AcknowledgeEmergency("Bediener"));
+        run(5);
+        assertEquals(false, rt.snapshot().emergencyLatched());
+        assertEquals(OperatingState.RECOVERY, rt.snapshot().operatingState());   // Quittieren führt in den Wiederanlauf
+        rt.submit(new ControlCommand.RequestReady("Bediener"));
+        run(5);
+        assertEquals(true, ex.commands().drive(3, 5, SpeedSteps.S128, Direction.FORWARD, CommandPriority.MANUAL));
+        run(20);
+        assertEquals(1L, z21.count(drive(3, 5, Direction.FORWARD)));
+    }
+
+    public void testReconnectAfterDisconnectHasNoGlobalStopButHaltsKnownLocos() {
+        rt.submit(new ControlCommand.RegisterTrain(train("B", 5), "Test"));
+        bringReady();
+        rt.disconnect();
+        run(10);
+        z21.clearSent();
+        connect();
+        run(20);
+        assertEquals(0L, z21.count(STOP_ALL));                                    // nur beim ersten Verbinden
+        assertEquals(1L, z21.count(drive(5, 0, Direction.FORWARD)));             // Entscheidung 28
+        assertEquals(true, rt.snapshot().emergencyLatched());                    // Nothalt vom Trennen bleibt gesetzt
+    }
+
+    public void testUnexpectedDisconnectStillAttemptsEmergencyStop() {
+        bringReady();
+        station.disconnect();                       // nicht über die Laufzeit: kein Nothalt vorher
+        run(5);
+        assertEquals(false, journal.byCode("EMERGENCY_STOP_SEND_FAILED").isEmpty());   // Versuch und ehrliche Meldung
+        assertEquals(true, journal.byCode("EMERGENCY_STOP_BEFORE_DISCONNECT").isEmpty());
+        assertEquals(true, rt.snapshot().emergencyLatched());
+        assertEquals(OperatingState.FAULT, rt.snapshot().operatingState());
     }
 
     // ------------------------------------------------------------------ Verbinden und Fähigkeiten
@@ -99,7 +156,8 @@ public class Z21RuntimeTest {
         z21.silent = false;
         run(400);                                   // Statusabfrage nach 1 s wird beantwortet
         PlantSnapshot s = rt.snapshot();
-        assertEquals(OperatingState.CONNECTING, s.operatingState());
+        assertEquals(true, s.operatingState() != OperatingState.OFFLINE);
+        assertEquals(1L, z21.count(STOP_ALL));                                    // erst jetzt der Nothalt (Entscheidung 33)
         assertTrue(s.capabilities().has(Feature.CAN_DETECTORS), "CAN erkannt (1.43): " + s.capabilities());
         assertTrue(s.capabilities().has(Feature.RAILCOM), "RailCom erkannt");
         assertTrue(s.capabilities().has(Feature.FUNCTIONS_F29_F31), "F29–F31 erkannt");
@@ -329,5 +387,10 @@ public class Z21RuntimeTest {
         assertEquals(true, z21.closed);
         run(5);
         assertEquals(true, rt.snapshot().emergencyLatched());
+        assertEquals(OperatingState.FAULT, rt.snapshot().operatingState());     // Folgen des Verlusts bleiben
+        assertEquals(SensorState.UNKNOWN, rt.snapshot().sensor(C1));
+        // geordnetes Trennen: kein irreführender Fehlereintrag, stattdessen INFO
+        assertEquals(true, journal.byCode("EMERGENCY_STOP_SEND_FAILED").isEmpty());
+        assertEquals(1, journal.byCode("EMERGENCY_STOP_BEFORE_DISCONNECT").size());
     }
 }

@@ -425,7 +425,8 @@ public final class CommandScheduler implements CommandSink {
     private DriveValue haltFor(Slot s) {
         if (s.sent instanceof DriveValue d) return new DriveValue(0, d.direction(), d.steps());
         if (s.knownSteps == null) return null;
-        // nie angesprochen: Richtung aus der Lokmeldung der Zentrale, sonst vorwärts (betrifft nur Licht/Richtung)
+        // Entscheidung 33 (3): nie angesprochen → zuletzt gemeldete Richtung, sonst vorwärts, ohne vorherige Abfrage
+        // (kein Verzug; bei einer stehenden Lok wechselt höchstens Licht oder Richtung)
         Direction dir = plant.reportedLoco(s.key.address()).map(l -> l.direction()).orElse(Direction.FORWARD);
         return new DriveValue(0, dir, s.knownSteps);
     }

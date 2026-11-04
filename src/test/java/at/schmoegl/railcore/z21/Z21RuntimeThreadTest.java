@@ -45,7 +45,8 @@ public class Z21RuntimeThreadTest {
         rt.start();
         try {
             rt.connect();
-            await(() -> rt.snapshot().operatingState() == OperatingState.CONNECTING, "verbunden");
+            await(() -> rt.snapshot().operatingState() != OperatingState.OFFLINE, "verbunden");
+            await(() -> rt.snapshot().emergencyLatched(), "Nothalt beim ersten Verbinden (Entscheidung 33)");
             await(() -> rt.snapshot().capabilities().detected(), "Fähigkeiten erkannt");
             await(() -> z21.count("09 00 40 00 E3 F0 E3 29 D9") >= 2, "Handregler wird abgefragt");
 

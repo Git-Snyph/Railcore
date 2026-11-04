@@ -100,6 +100,9 @@ public final class ControlExecutor {
     private final AtomicLong latestHeartbeat = new AtomicLong(NO_HEARTBEAT);
     private final CommandStationListener stationListener = new StationListener();
 
+    private volatile boolean emergencyOnFirstConnect;
+    private boolean firstConnectDone;             // nur Steuerungs-Thread
+    private final java.util.concurrent.atomic.AtomicBoolean orderlyDisconnect = new java.util.concurrent.atomic.AtomicBoolean();
     private volatile long lastTickNanos;
     private volatile boolean stalled;
     private volatile PlantSnapshot snapshot;
@@ -204,7 +207,10 @@ public final class ControlExecutor {
      * Nachziehen des Zustands vorrangig ein. Schlägt das Senden fehl, wird das protokolliert und der Zustand trotzdem
      * auf Nothalt bzw. Störung gesetzt.
      */
-    public void emergencyStop(String source, String reason) {
+    public void emergencyStop(String source, String reason) { sendEmergencyStop(source, reason); }
+
+    /** Wie {@link #emergencyStop}; @return true, wenn der Nothalt an die Zentrale gesendet werden konnte */
+    boolean sendEmergencyStop(String source, String reason) {
         emergencyEpoch.incrementAndGet();   // vor dem Senden: der Befehlsplaner sendet danach keine Fahrt mehr
         boolean sent;
         try {
@@ -218,7 +224,21 @@ public final class ControlExecutor {
         boolean wasSent = sent;
         urgent.add(new Task("Nothalt nachziehen", () -> applyEmergency(source, reason, wasSent)));
         queue.offer(WAKE);
+        return sent;
     }
+
+    /**
+     * Entscheidung 33 (2): Beim ersten Verbinden dieses Executors zusätzlich Nothalt für die ganze Anlage (auch Loks,
+     * die RailCore nicht kennt). Vor dem Start bzw. vor dem ersten Schritt aufrufen (ControlRuntime).
+     */
+    void enableEmergencyStopOnFirstConnect() { emergencyOnFirstConnect = true; }
+
+    /**
+     * Geordnetes Trennen: Der Nothalt wurde unmittelbar vorher erfolgreich gesendet. Die folgende Trennmeldung der
+     * Zentrale löst dann keinen weiteren (an den geschlossenen Adapter zwangsläufig scheiternden) Nothalt aus; der
+     * gesetzte Nothalt und alle übrigen Folgen des Verbindungsverlusts bleiben.
+     */
+    void markOrderlyDisconnect() { orderlyDisconnect.set(true); }
 
     /** Hat der Executor-Watchdog einen Hänger erkannt? */
     public boolean isStalled() { return stalled; }
@@ -614,8 +634,16 @@ public final class ControlExecutor {
         lastComm = s;
     }
 
-    private void connectionLost(String why) {
-        emergencyStop("verbindung", why);
+    private void connectionLost(String why) { connectionLost(why, false); }
+
+    /** @param stopAlreadySent geordnetes Trennen: Nothalt wurde unmittelbar vorher erfolgreich gesendet */
+    private void connectionLost(String why, boolean stopAlreadySent) {
+        if (stopAlreadySent) {
+            journal.info("nothalt", "EMERGENCY_STOP_BEFORE_DISCONNECT", "Geordnetes Trennen: Nothalt wurde vor dem Trennen "
+                    + "gesendet, kein weiterer Nothalt an die getrennte Zentrale (" + why + ")");
+        } else {
+            emergencyStop("verbindung", why);
+        }
         scheduler.connectionLost();
         enterFault("verbindung", why);
         feedback.reset();
@@ -706,13 +734,22 @@ public final class ControlExecutor {
 
     private void onConnection(boolean connected, String info) {
         OperatingState s = plant.operatingState();
+        boolean orderly = orderlyDisconnect.getAndSet(false);
         if (connected) {
             if (s == OperatingState.OFFLINE) {
                 communication.reset();
                 lastComm = CommunicationWatchdog.Status.OK;
                 plant.setCommunication(CommunicationWatchdog.Status.OK);
                 plant.transition(OperatingState.CONNECTING, "Verbunden mit " + info);
-                scheduler.connectionRestored();
+                if (emergencyOnFirstConnect && !firstConnectDone) {
+                    // Entscheidung 33 (2) / Grundsatz 5: nach dem Programmstart steht nichts als gesichert fest – auch
+                    // Loks, die RailCore nicht kennt, müssen stehen. Nothalt am Befehlsplaner vorbei, nur Quittieren hebt
+                    // ihn auf (Sperre aus Entscheidung 23). Aus „Verbinde“ führt er nach „Störung“ (Zustandsmodell).
+                    emergencyStop("verbindung", "Erstes Verbinden nach Programmstart – Nothalt für die ganze Anlage "
+                            + "(Entscheidung 33), bitte quittieren");
+                }
+                firstConnectDone = true;
+                scheduler.connectionRestored();     // zusätzlich Halt je bekannter Lok (Entscheidung 28)
             } else {
                 journal.info("zentrale", "CONNECTED", "Verbindung gemeldet im Zustand " + s.german() + ": " + info);
                 scheduler.connectionRestored();   // nach Verlust: Halt einmalig neu übertragen (Zustand bleibt Störung)
@@ -725,7 +762,7 @@ public final class ControlExecutor {
             plant.setTrackPower(TrackPower.UNKNOWN);
             plant.clearStationViews("Verbindung getrennt");
         } else if (s != OperatingState.OFFLINE) {
-            connectionLost("Zentrale getrennt: " + info);
+            connectionLost("Zentrale getrennt: " + info, orderly);
         }
     }
 

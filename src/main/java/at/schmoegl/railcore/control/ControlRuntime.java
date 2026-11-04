@@ -22,14 +22,16 @@ import java.util.Objects;
  *       Lokmeldungen, Weichenmeldungen, Fähigkeiten) legt deren Empfangs-Thread nur in die Warteschlange des Executors;
  *       allein der Executor ändert den {@link PlantState}.</li>
  *   <li><b>Verbinden</b>: Melder „unbekannt“, Züge „unbestätigt“ (Grundsatz 5); jede bekannte Lok erhält einmal
- *       Halt, nie eine Fahrstufe (Entscheidung 28). Nach Verbindungsverlust (Kommunikations-Watchdog) Nothalt,
+ *       Halt, nie eine Fahrstufe (Entscheidung 28); beim ersten Verbinden nach dem Programmstart zusätzlich Nothalt für
+ *       die ganze Anlage, der quittiert werden muss (Entscheidung 33). Nach Verbindungsverlust (Kommunikations-Watchdog) Nothalt,
  *       Störung, Melder unbekannt, Meldungen der Zentrale verworfen; nach Wiederverbindung erneut Nothalt und Halt
  *       an alle bekannten Loks (Lastenheft 7). Fähigkeiten werden vom Adapter erkannt, nie vorausgesetzt.</li>
  *   <li><b>Executor-Watchdog</b> (eigener Thread) löst Nothalt aus, wenn der Steuerungs-Thread hängt.</li>
  *   <li><b>Handregler</b> auf Stellvertreter-Adressen werden als zeitabhängige Aufgabe abgefragt
  *       ({@link HandControllerPoller}).</li>
  *   <li><b>Trennen und Beenden</b> senden vorher Nothalt, solange die Zentrale verbunden ist: die Z21 fährt sonst
- *       mit der letzten Fahrstufe weiter (Entscheidung 10).</li>
+ *       mit der letzten Fahrstufe weiter (Entscheidungen 10, 33). Die folgende Trennmeldung löst keinen zweiten,
+ *       zwangsläufig scheiternden Nothalt aus.</li>
  * </ul>
  * Betrieb: {@link #start()} (Steuerungs-Thread und Watchdog), dann {@link #connect()}. Tests mit
  * {@code TimeSource.Manual} rufen {@link #start()} nicht auf, sondern bedienen {@link ControlExecutor#pump()}
@@ -61,6 +63,7 @@ public final class ControlRuntime implements AutoCloseable {
         Objects.requireNonNull(hand);
         ControlExecutor ex = ControlExecutor.create(control, scheduler, clock, journal, station, knownContacts, authority);
         HandControllerPoller poller = new HandControllerPoller(ex, hand);
+        ex.enableEmergencyStopOnFirstConnect();   // Entscheidung 33 (2)
         ex.enqueue("Handregler-Abfrage einrichten", poller::install);
         journal.info("steuerung", "RUNTIME_CREATED", "Steuerung verdrahtet mit Zentrale „" + station.name() + "“");
         return new ControlRuntime(ex, station, journal);
@@ -87,11 +90,13 @@ public final class ControlRuntime implements AutoCloseable {
     }
 
     /**
-     * Verbindung trennen. Ist die Zentrale verbunden, wird vorher Nothalt gesendet – ohne Verbindung kann RailCore die
+     * Verbindung trennen. Ist die Zentrale verbunden, wird vorher Nothalt gesendet (Entscheidung 33) – ohne Verbindung kann RailCore die
      * Loks nicht mehr anhalten. Der Nothalt bleibt gesetzt und muss nach dem nächsten Verbinden quittiert werden.
      */
     public void disconnect() {
-        if (station.isConnected()) emergencyStop("steuerung", "Verbindung wird getrennt");
+        // Entscheidung 33 (1): Nothalt, keine Gleisspannung aus; danach Trennmeldung ohne zweiten Nothalt
+        if (station.isConnected() && executor.sendEmergencyStop("steuerung", "Verbindung wird getrennt"))
+            executor.markOrderlyDisconnect();
         station.disconnect();
     }
 
