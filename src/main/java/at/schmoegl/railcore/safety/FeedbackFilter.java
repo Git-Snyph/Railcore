@@ -12,6 +12,10 @@ import java.util.function.Consumer;
  * Entprellt Rückmelder: "belegt" wird sofort weitergegeben (sicherer Fall), "frei" erst, wenn der Melder
  * releaseDelay lang frei geblieben ist. Kurzes Flackern wird gezählt und ab einem Schwellwert gemeldet.
  * Muss regelmäßig mit {@link #poll()} aufgerufen werden.
+ * <p>
+ * Ein Melder ohne bisherige Meldung ist „unbekannt“ ({@link SensorState#UNKNOWN}), nie frei. Auch der Übergang
+ * unbekannt → frei wird erst nach releaseDelay weitergegeben. Im Betrieb an den Steuerungs-Executor gebunden;
+ * die Synchronisierung bleibt, damit Statistiken auch von anderen Threads gelesen werden können.
  */
 public final class FeedbackFilter {
 
@@ -42,21 +46,23 @@ public final class FeedbackFilter {
 
     public synchronized void raw(int contact, boolean occupied, long ts) {
         Stats st = stats.computeIfAbsent(contact, k -> new Stats());
-        boolean isOcc = stable.getOrDefault(contact, false);
+        Boolean current = stable.get(contact);   // null = unbekannt
         if (occupied) {
-            if (pendingRelease.remove(contact) != null) {
+            Long pending = pendingRelease.remove(contact);
+            if (pending != null && Boolean.TRUE.equals(current)) {
                 st.flickerCount++;
                 if (st.flickerCount == flickerWarnThreshold || st.flickerCount % (flickerWarnThreshold * 10) == 0)
                     journal.warn("melder", "SENSOR_FLICKER", "Rückmelder " + Contacts.format(contact) + " flackert (" + st.flickerCount + "×) – Kontakt/Radschleifer prüfen");
                 return;  // war noch nicht als frei gemeldet → bleibt belegt
             }
-            if (!isOcc) {
+            if (!Boolean.TRUE.equals(current)) {
                 stable.put(contact, true);
                 st.occupiedCount++;
                 st.lastChangeNanos = ts;
                 out.accept(new Event(contact, true, ts));
             }
-        } else if (isOcc) {
+        } else if (!Boolean.FALSE.equals(current)) {
+            // belegt oder unbekannt → frei erst nach Ablauf der Freimeldeverzögerung
             pendingRelease.putIfAbsent(contact, ts);
         }
     }
@@ -80,11 +86,15 @@ public final class FeedbackFilter {
         due.forEach(out);
     }
 
-    public synchronized boolean isOccupied(int contact) { return stable.getOrDefault(contact, false); }
+    /** Entprellter Zustand; ohne bisherige Meldung „unbekannt“ (nie frei). */
+    public synchronized SensorState state(int contact) {
+        Boolean b = stable.get(contact);
+        return b == null ? SensorState.UNKNOWN : b ? SensorState.OCCUPIED : SensorState.FREE;
+    }
 
     public synchronized Map<Integer, Stats> stats() { return Map.copyOf(stats); }
 
-    /** Nach Verbindungsverlust: Zustand verwerfen, damit neu eingelesene Werte als Änderung erscheinen. */
+    /** Nach Verbindungsverlust: Zustand verwerfen (alle Melder wieder unbekannt), damit neu eingelesene Werte als Änderung erscheinen. */
     public synchronized void reset() {
         stable.clear();
         pendingRelease.clear();
