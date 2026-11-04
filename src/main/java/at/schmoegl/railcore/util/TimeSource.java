@@ -16,5 +16,11 @@ public interface TimeSource {
         public synchronized void advanceMillis(double ms) { now += (long) (ms * 1_000_000); }
 
         public synchronized void advanceSeconds(double s) { now += (long) (s * 1_000_000_000L); }
+
+        /** Exakt um ganze Nanosekunden weiterstellen (Simulation); rückwärts ist nicht erlaubt. */
+        public synchronized void advanceNanos(long nanos) {
+            if (nanos < 0) throw new IllegalArgumentException("Uhr läuft nicht rückwärts: " + nanos);
+            now += nanos;
+        }
     }
 }

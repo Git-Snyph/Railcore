@@ -20,6 +20,6 @@ public class ControlConfigTest {
         assertThrows(IllegalArgumentException.class, () -> d.withWatchdog(200, 0));
         assertThrows(IllegalArgumentException.class, () -> d.withQueueCapacity(1));
         assertThrows(IllegalArgumentException.class,
-                () -> new ControlConfig(50, 200, 20, 5_000, 3_000, 500, 5, 100));      // Warnung nach Verlust
+                () -> new ControlConfig(50, 200, 20, 5_000, 3_000, 500, 5, 100, 1_000, 60));      // Warnung nach Verlust
     }
 }

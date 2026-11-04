@@ -17,15 +17,6 @@ import at.schmoegl.railcore.safety.OperatingState;
  */
 final class GatedCommandSink implements CommandSink {
 
-    /** Prüft, ob eine Lok eine gültige Reservierung zur Bewegung besitzt. */
-    @FunctionalInterface
-    interface MovementAuthority {
-        boolean mayMove(int address);
-
-        /** Keine Reservierungsverwaltung vorhanden: im Zweifel halt. */
-        MovementAuthority NONE = address -> false;
-    }
-
     private final ThreadGuard guard;
     private final PlantState plant;
     private final Journal journal;
