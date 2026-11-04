@@ -25,10 +25,11 @@ import java.util.function.LongSupplier;
  * Sende-Thread.
  * <ul>
  *   <li><b>Ein Platz je Ziel</b> (Lok-Fahrbefehl, Lokfunktion, Weiche): nur der neueste wartende Wert gilt
- *       (zusammenfassen). Ein Wert, der dem zuletzt gesendeten <i>und bestätigten</i> gleicht, wird nie gesendet.
+ *       (zusammenfassen). Ein Wert, der dem zuletzt gesendeten <i>und bestätigten</i> gleicht, wird nie gesendet –
+ *       außer bei Weichen: sie melden keine Endlage und werden nie unterdrückt (Entscheidung 28).
  *       „Bestätigt“ heißt: gesendet bei intakter Verbindung und seither weder Verbindungsverlust noch Nothalt.</li>
- *   <li><b>Vorrang</b> ({@link CommandPriority}): streng nach Klasse, innerhalb der Klasse älteste zuerst; in der
- *       Sicherheitsklasse Halt vor Bremsstufen. Ein niedriger eingestufter Befehl überschreibt nie einen höher
+ *   <li><b>Vorrang</b> ({@link CommandPriority}): streng nach Klasse; innerhalb der Klasse Halt vor Absenkungen vor
+ *       Erhöhungen (Bremsen vor Anfahren, Entscheidung 28), dann älteste zuerst. Ein niedriger eingestufter Befehl überschreibt nie einen höher
  *       eingestuften wartenden; ein wartender Halt wird nur durch einen Halt ersetzt. Fahrstufe 0 gilt immer
  *       mindestens als Sicherheit.</li>
  *   <li><b>Budget</b> aus dem Rechenmodell ({@link SchedulerConfig}), laufend mit der Zahl aktiver Loks
@@ -69,7 +70,8 @@ public final class CommandScheduler implements CommandSink {
 
     private static final class Pending {
         final Slot slot;
-        final long firstNanos;
+        final long firstNanos;                 // erstes Einreihen: Reihenfolge innerhalb der Klasse
+        long classNanos;                       // Eintritt in die aktuelle Klasse: Wartezeit je Klasse
         final long seq;
         final int cost;
         CommandPriority priority;
@@ -79,6 +81,7 @@ public final class CommandScheduler implements CommandSink {
         Pending(Slot slot, long firstNanos, long seq, int cost, CommandPriority priority, Object value, DriveListener listener) {
             this.slot = slot;
             this.firstNanos = firstNanos;
+            this.classNanos = firstNanos;
             this.seq = seq;
             this.cost = cost;
             this.priority = priority;
@@ -87,11 +90,21 @@ public final class CommandScheduler implements CommandSink {
         }
 
         boolean halt() { return value instanceof DriveValue d && d.step() == 0; }
+
+        /** Absenkung gegenüber dem zuletzt gesendeten Wert (gleiche Richtung): Bremsen vor Anfahren. */
+        boolean reduction() { return isReduction(value, slot.sent); }
+    }
+
+    /** Absenkung gegenüber dem zuletzt gesendeten Wert bei gleicher Richtung. */
+    private static boolean isReduction(Object value, Object sent) {
+        return value instanceof DriveValue d && sent instanceof DriveValue s
+                && d.direction() == s.direction() && d.step() < s.step();
     }
 
     private static final Comparator<Pending> ORDER = Comparator
             .comparingInt((Pending p) -> p.priority.ordinal())
             .thenComparingInt(p -> p.halt() ? 0 : 1)
+            .thenComparingInt(p -> p.reduction() ? 0 : 1)        // Entscheidung 28: Bremsen vor Anfahren
             .thenComparingLong(p -> p.firstNanos)
             .thenComparingLong(p -> p.seq);
 
@@ -387,8 +400,10 @@ public final class CommandScheduler implements CommandSink {
         }
         total.submitted++;
         window.submitted++;
-        if (priority == CommandPriority.SAFETY) demandCount++;
-        if (slot.confirmed && value.equals(slot.sent)) {
+        // Bedarf der Bremskurven: jede Absenkung (planmäßig als Automatik) und jeder Sicherheitsbefehl
+        if (priority == CommandPriority.SAFETY || isReduction(value, slot.sent)) demandCount++;
+        // Weichen nie unterdrücken (keine Endlagenmeldung, Entscheidung 12/28); wartend wird trotzdem zusammengefasst
+        if (key.kind() != Kind.TURNOUT && slot.confirmed && value.equals(slot.sent)) {
             if (p != null) {                       // neuester Wert = Zustand der Zentrale: Wartendes entfällt
                 queue.remove(p);
                 slot.pending = null;
@@ -403,6 +418,7 @@ public final class CommandScheduler implements CommandSink {
         if (p != null) {
             queue.remove(p);
             p.value = value;
+            if (priority != p.priority) p.classNanos = now;   // Wartezeit zählt je Klasse ab Eintritt
             p.priority = priority;                 // gleich oder höher (niedriger wurde oben abgewiesen)
             p.listener = listener;
             queue.add(p);
@@ -450,7 +466,8 @@ public final class CommandScheduler implements CommandSink {
                     return;
                 }
                 double floor = head.halt() ? -config.haltBorrowCommands() : 0;
-                double missing = head.cost + floor - tokens;
+                // Kosten über dem Bucket-Inhalt (Weiche bei kleinem Bucket): starten bei vollem Bucket, Rest als Schuld
+                double missing = Math.min(head.cost, config.burstCommands()) + floor - tokens;
                 if (missing > EPS) {
                     scheduleWake(now, missing);
                     return;
@@ -480,11 +497,11 @@ public final class CommandScheduler implements CommandSink {
     }
 
     private void send(Pending p, long now) {
-        long waited = Math.max(0, now - p.firstNanos);
+        long waited = Math.max(0, now - p.classNanos);
         total.wait.get(p.priority).record(waited);
         window.wait.get(p.priority).record(waited);
         int k = p.priority.ordinal();
-        evalWait[k].record(overloadRelevantWait(p.priority, p.firstNanos, now));
+        evalWait[k].record(overloadRelevantWait(p.priority, p.classNanos, now));
         Slot s = p.slot;
         switch (p.value) {
             case DriveValue d -> sendDrive(p, d, now);
@@ -580,7 +597,7 @@ public final class CommandScheduler implements CommandSink {
         int comfort = 0;
         for (Pending p : queue) {
             int k = p.priority.ordinal();
-            oldest[k] = Math.min(oldest[k], p.firstNanos);
+            oldest[k] = Math.min(oldest[k], p.classNanos);
             if (p.priority == CommandPriority.COMFORT) comfort++;
         }
         // Rückstau ohne Komfort: Komfort ist je Lok und Funktion zusammengefasst, also begrenzt, und darf warten
@@ -614,7 +631,7 @@ public final class CommandScheduler implements CommandSink {
                         pendingWait / 1e6, limit / 1_000_000));
         }
         if (demandRate > budget + EPS)
-            reasons.add(String.format(Locale.ROOT, "Bedarf Sicherheit/Bremskurven %.1f/s (Mittel %d s) über Budget %.1f/s", demandRate,
+            reasons.add(String.format(Locale.ROOT, "Bedarf Bremskurven/Sicherheit %.1f/s (Mittel %d s) über Budget %.1f/s", demandRate,
                     config.demandWindowSeconds(), budget));
 
         if (!reasons.isEmpty()) {

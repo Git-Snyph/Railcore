@@ -50,15 +50,16 @@ public class SchedulerLoadSimTest {
     /** Ergebnis eines Lastlaufs. */
     record LoadResult(int locos, SchedulerMetrics metrics, int within10, int unplanned, double maxErrorMm,
                       double maxRestMm, int overloadReports, boolean brakingDemandReported, boolean allStopped,
+                      int interventions, int trainsWithIntervention,
                       Journal journal) {
         String format() {
             StringBuilder b = new StringBuilder(String.format(Locale.ROOT,
                     "Last %3d Loks: Budget %.1f/s, Auslastung %.0f %%, Rückstau max %d, gesendet %d, zusammengefasst %d, "
-                            + "Überlast %d× (Bremsbedarf über Budget: %s); Halt ±10 mm %d/%d, ungeplant %d, |Fehler| max %.1f mm, "
-                            + "Zugspitze max %.1f mm (Freigabe %.0f)",
+                            + "Überlast %d× (Bremsbedarf über Budget: %s); Halt ±10 mm %d/%d, ungeplant %d, "
+                            + "Überwachungseingriffe %d (%d Züge), |Fehler| max %.1f mm, Zugspitze max %.1f mm (Freigabe %.0f)",
                     locos, metrics.budgetPerSecond(), metrics.utilization() * 100, metrics.maxBacklog(), metrics.sent(),
                     metrics.coalesced(), metrics.overloadEvents(), brakingDemandReported ? "ja" : "nein", within10, locos,
-                    unplanned, maxErrorMm, maxRestMm, EOA_MM));
+                    unplanned, interventions, trainsWithIntervention, maxErrorMm, maxRestMm, EOA_MM));
             for (CommandPriority p : CommandPriority.QUEUED) {
                 TimingStatistics.Summary s = metrics.waitOf(p);
                 if (s.count() == 0) continue;
@@ -131,7 +132,7 @@ public class SchedulerLoadSimTest {
         }, t0 + (long) ((START_WINDOW_S + 60) * 1e9));
         world.run(controller, () -> false, world.now() + 16_000 * MS);   // Komfort abarbeiten lassen
 
-        int within = 0, unplanned = 0;
+        int within = 0, unplanned = 0, interventions = 0, withIntervention = 0;
         double maxErr = 0, maxRest = Double.NEGATIVE_INFINITY;
         for (int i = 0; i < n; i++) {
             double rest = locos[i].position(world.now());
@@ -140,10 +141,12 @@ public class SchedulerLoadSimTest {
             maxErr = Math.max(maxErr, Math.abs(err));
             if (Math.abs(err) <= 10) within++;
             if (drivers[i].unplannedHalt()) unplanned++;
+            interventions += drivers[i].supervisionInterventions();
+            if (drivers[i].supervisionInterventions() > 0) withIntervention++;
         }
         boolean demand = journal.byCode("SCHEDULER_OVERLOAD").stream().anyMatch(e -> e.message().contains("Bremskurven"));
         return new LoadResult(n, ex.scheduler().metrics(), within, unplanned, maxErr, maxRest,
-                journal.byCode("SCHEDULER_OVERLOAD").size(), demand, done, journal);
+                journal.byCode("SCHEDULER_OVERLOAD").size(), demand, done, interventions, withIntervention, journal);
     }
 
     private static LoadResult checked(int n) {
@@ -156,6 +159,8 @@ public class SchedulerLoadSimTest {
         TimingStatistics.Summary safety = r.metrics().waitOf(CommandPriority.SAFETY);
         TimingStatistics.Summary comfort = r.metrics().waitOf(CommandPriority.COMFORT);
         assertTrue(safety.count() > 0 && comfort.count() > 0, "Messwerte je Klasse vorhanden");
+        // Entscheidung 28: Sicherheit (Halte, Eingriffe der Überwachung) wartet nie hinter dem Normalbetrieb
+        assertTrue(safety.maxMs() <= 50, n + " Loks: Sicherheit wartet " + safety.maxMs() + " ms");
         assertTrue(r.metrics().sent() <= r.metrics().submitted(), "nie mehr gesendet als angenommen");
         return r;
     }
@@ -194,7 +199,8 @@ public class SchedulerLoadSimTest {
         int runs = 100;
         for (double kmh : new double[] { 100, 230 }) {
             double[] err = new double[runs];
-            double maxSafetyWait = 0;
+            double maxSafetyWait = 0, maxAutoWait = 0;
+            int interventions = 0, unplanned = 0;
             for (int i = 0; i < runs; i++) {
                 PrecisionStopSimTest.Run run = new PrecisionStopSimTest.Run(800_000 + i,
                         PrecisionStopSimTest.Scenario.platform(kmh, 2500, 2200, 2700), scarce);
@@ -204,10 +210,14 @@ public class SchedulerLoadSimTest {
                 assertTrue(r.restMm() < 2700, kmh + " km/h Lauf " + i + ": hinter dem Freigabeende bei " + r.restMm());
                 err[i] = r.errorMm();
                 maxSafetyWait = Math.max(maxSafetyWait, run.ex.scheduler().metrics().waitOf(CommandPriority.SAFETY).maxMs());
+                maxAutoWait = Math.max(maxAutoWait, run.ex.scheduler().metrics().waitOf(CommandPriority.AUTOMATIC).maxMs());
+                interventions += r.driver().supervisionInterventions();
+                if (r.driver().unplannedHalt()) unplanned++;
             }
             PrecisionStopSimTest.Stats s = PrecisionStopSimTest.stats(err, 10);
             System.out.println(s.format(String.format(Locale.ROOT, "Knappes Budget 8,5/s, Bahnsteig aus %.0f km/h", kmh), 10)
-                    + String.format(Locale.ROOT, "; Wartezeit Sicherheit max %.0f ms", maxSafetyWait));
+                    + String.format(Locale.ROOT, "; Wartezeit max Sicherheit %.0f ms, Automatik %.0f ms; Überwachungseingriffe %d, ungeplant %d",
+                    maxSafetyWait, maxAutoWait, interventions, unplanned));
         }
         double maxRest = 0;
         for (int i = 0; i < runs; i++) {

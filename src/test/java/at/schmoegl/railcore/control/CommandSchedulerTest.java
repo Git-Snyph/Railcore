@@ -110,21 +110,21 @@ public class CommandSchedulerTest {
     }
 
     public void testBudgetIsKeptAndEvenlyDistributed() {
-        setup(SchedulerConfig.defaults());                     // 75/s, Bucket 2; Funktionen zählen nicht als aktive Lok
+        setup(SchedulerConfig.defaults());                     // 75/s, Bucket 4; Funktionen zählen nicht als aktive Lok
         for (int a = 1; a <= 300; a++) ex.commands().function(a, 1, true, CommandPriority.MANUAL);
         runFor(4_100 * MS);
         List<Long> t = station.sentAt;
         assertEquals(300, t.size());
-        assertEquals(t.get(0), t.get(1));                      // Bucket: zwei sofort
+        for (int i = 1; i < 4; i++) assertEquals(t.get(0), t.get(i));   // Bucket: vier sofort
         double spacing = 1e9 / 75;
-        for (int i = 2; i < t.size(); i++) {
+        for (int i = 4; i < t.size(); i++) {
             long gap = t.get(i) - t.get(i - 1);
             assertTrue(Math.abs(gap - spacing) < 2_000, "gleichmäßig: Abstand " + gap + " ns bei Nr. " + i);
         }
         for (int i = 0; i < t.size(); i++) {                   // jedes 1-s-Fenster: höchstens Budget + Bucket
             int n = 0;
             for (int j = i; j < t.size() && t.get(j) < t.get(i) + 1_000 * MS; j++) n++;
-            assertTrue(n <= 75 + 2, "Fenster ab Nr. " + i + ": " + n + " Befehle");
+            assertTrue(n <= 75 + 4, "Fenster ab Nr. " + i + ": " + n + " Befehle");
         }
         SchedulerMetrics m = ex.scheduler().metrics();
         assertTrue(m.utilization() > 0.9, "Auslastung " + m.utilization());
@@ -174,7 +174,7 @@ public class CommandSchedulerTest {
     }
 
     public void testUnchangedSpeedAndDirectionIsNeverSent() {
-        setup(SchedulerConfig.defaults());
+        setup(SchedulerConfig.defaults().withBurst(2, 2));     // Bucket 2: Funktion und Weiche müssen warten
         drive(3, 10, CommandPriority.MANUAL);
         assertTrue(drive(3, 10, CommandPriority.MANUAL), "angenommen");
         assertTrue(drive(3, 10, CommandPriority.AUTOMATIC), "angenommen");
@@ -187,6 +187,60 @@ public class CommandSchedulerTest {
         assertEquals(List.of("drive 3 10 FORWARD", "drive 3 10 REVERSE", "turnout 5 DIVERGING", "fn 3"), station.sent);
         assertEquals(2L, ex.scheduler().metrics().suppressed());   // Fahrbefehle gegen den bestätigten Zustand
         assertEquals(2L, ex.scheduler().metrics().coalesced());    // Funktion, Weiche: gleicher Wert wartete noch
+    }
+
+    public void testTurnoutIsNeverSuppressedButCoalescedWhilePending() {
+        setup(TIGHT);
+        drive(1, 5, CommandPriority.MANUAL);                   // Token weg: die Weiche wartet
+        ex.commands().turnout(5, TurnoutPosition.DIVERGING, CommandPriority.AUTOMATIC);
+        ex.commands().turnout(5, TurnoutPosition.STRAIGHT, CommandPriority.AUTOMATIC);
+        ex.commands().turnout(5, TurnoutPosition.DIVERGING, CommandPriority.AUTOMATIC);
+        runFor(200 * MS);
+        assertEquals(List.of("drive 1 5 FORWARD", "turnout 5 DIVERGING"), station.sent);   // wartend zusammengefasst
+        ex.commands().turnout(5, TurnoutPosition.DIVERGING, CommandPriority.AUTOMATIC);   // bestätigt gleich: trotzdem
+        runFor(200 * MS);
+        assertEquals(List.of("drive 1 5 FORWARD", "turnout 5 DIVERGING", "turnout 5 DIVERGING"), station.sent);
+        assertEquals(0L, ex.scheduler().metrics().suppressed());
+    }
+
+    public void testReductionsBeforeIncreasesWithinClass() {
+        setup(SchedulerConfig.defaults());
+        drive(31, 40, CommandPriority.AUTOMATIC);
+        drive(32, 40, CommandPriority.AUTOMATIC);
+        drive(33, 40, CommandPriority.AUTOMATIC);
+        drive(34, 40, CommandPriority.AUTOMATIC);              // Bucket 4 leer
+        drive(35, 20, CommandPriority.AUTOMATIC);              // Anfahren (noch nie gesendet), ältester
+        clock.advanceNanos(1_000);
+        drive(31, 50, CommandPriority.AUTOMATIC);              // Beschleunigen
+        clock.advanceNanos(1_000);
+        drive(32, 30, CommandPriority.AUTOMATIC);              // Bremsstufe, jünger
+        runFor(200 * MS);
+        assertEquals(List.of("drive 32 30 FORWARD", "drive 35 20 FORWARD", "drive 31 50 FORWARD"),
+                station.sent.subList(4, 7));
+    }
+
+    public void testSupervisionReplacesWaitingAutomaticBrakeStep() {
+        setup(TIGHT);
+        drive(1, 5, CommandPriority.MANUAL);                   // Token weg
+        drive(20, 40, CommandPriority.AUTOMATIC);              // planmäßige Bremsstufe wartet
+        assertTrue(drive(20, 10, CommandPriority.SAFETY), "Eingriff der Überwachung ersetzt die Bremsstufe");
+        assertEquals(false, drive(20, 35, CommandPriority.AUTOMATIC));   // Plan überschreibt den Eingriff nicht
+        runFor(100 * MS);
+        assertEquals(List.of("drive 1 5 FORWARD", "drive 20 10 FORWARD"), station.sent);
+        assertEquals(1L, ex.scheduler().metrics().waitOf(CommandPriority.SAFETY).count());
+        assertEquals(0L, ex.scheduler().metrics().waitOf(CommandPriority.AUTOMATIC).count());
+    }
+
+    public void testPhaseOffsetsAreSpreadOverTheTick() {
+        long tick = 50 * MS;
+        boolean[] used = new boolean[10];
+        for (int a = 1; a <= 10; a++) {
+            long p = TrainDriver.phaseOffsetNanos(a, tick);
+            assertTrue(p >= 0 && p < tick, "im Takt");
+            assertEquals(p, TrainDriver.phaseOffsetNanos(a, tick));   // fest
+            used[(int) (p / (tick / 10))] = true;
+        }
+        for (boolean u : used) assertTrue(u, "10 Adressen belegen alle 10 Zehntel des Takts");
     }
 
     public void testCoalescingSendsOnlyNewestValue() {
@@ -301,14 +355,15 @@ public class CommandSchedulerTest {
         assertEquals(OperatingState.FAULT, ex.snapshot().operatingState());
         station.connected();
         runFor(200 * MS);
-        assertEquals(List.of("drive 3 0 FORWARD", "drive 4 0 FORWARD"), sentSince(mark));   // einmalig Halt
+        // einmalig Halt; Lok 4 (zuletzt Fahrt) zuerst: Absenkung vor gleichbleibendem Halt
+        assertEquals(List.of("drive 4 0 FORWARD", "drive 3 0 FORWARD"), sentSince(mark));
         assertEquals(2L, ex.scheduler().metrics().retransmissions());
         assertEquals(1, journal.byCode("SCHEDULER_RETRANSMIT").size());
         station.connected();                                   // doppelte Meldung: keine weitere Neuübertragung
         runFor(200 * MS);
         drive(3, 0, CommandPriority.SAFETY);                   // jetzt wieder bestätigt: unverändert
         runFor(200 * MS);
-        assertEquals(List.of("drive 3 0 FORWARD", "drive 4 0 FORWARD"), sentSince(mark));
+        assertEquals(List.of("drive 4 0 FORWARD", "drive 3 0 FORWARD"), sentSince(mark));
         assertTrue(station.sent.stream().filter(s -> s.equals("drive 4 5 FORWARD")).count() == 1, "Fahrstufe nie wiederholt");
     }
 

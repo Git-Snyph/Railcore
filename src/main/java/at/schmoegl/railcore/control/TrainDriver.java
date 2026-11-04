@@ -52,7 +52,8 @@ public final class TrainDriver {
     private final long commandDelayNanos;
     private final double tickSeconds;
     private final boolean[] pointDone;
-    private final ControlExecutor.TickTask tickTask = (now, elapsed) -> update(now);
+    private final ControlExecutor.TickTask tickTask = (now, elapsed) -> onTick(now);
+    private final long phaseNanos;
     private final ControlExecutor.FeedbackObserver observer = this::onFeedback;
     /**
      * Rückmeldung des Befehlsplaners: die Positionsschätzung übernimmt einen Fahrbefehl erst zum tatsächlichen
@@ -78,6 +79,8 @@ public final class TrainDriver {
     private long stopCommandNanos = Long.MIN_VALUE;
     private double lastDeviationMm = Double.NaN;
     private int fixCount;
+    private int interventions;
+    private ScheduledAction phaseAction;
 
     private TrainDriver(ControlExecutor ex, DriveOrder order, StopPlanner.Settings settings) {
         this.ex = ex;
@@ -88,6 +91,7 @@ public final class TrainDriver {
         this.dir = order.direction();
         this.uncertainty = profile.uncertainty();
         this.tickSeconds = ex.config().tickMillis() / 1_000.0;
+        this.phaseNanos = phaseOffsetNanos(order.address(), ex.config().tickMillis() * 1_000_000L);
         this.plan = StopPlanner.plan(order, settings, tickSeconds);
         this.commandDelayNanos = order.commandDelay().meanNanos();
         this.pointDone = new boolean[order.points().size()];
@@ -143,6 +147,30 @@ public final class TrainDriver {
 
     public int fixCount() { return fixCount; }
 
+    /** Eingriffe der Überwachung des Freigabeendes (als Sicherheit gesendete Absenkungen und Halte). */
+    public int supervisionInterventions() { return interventions; }
+
+    /** Fester Versatz dieses Zuges im Takt (ns). */
+    public long phaseNanos() { return phaseNanos; }
+
+    /**
+     * Fester, deterministischer Versatz im Takt aus der Lokadresse (Entscheidung 28): Bruchteil von Adresse · φ⁻¹,
+     * damit fortlaufende Adressen gleichmäßig über den Takt verteilt sind und gleichzeitig bremsende Züge ihre
+     * Befehle nicht im selben Moment abgeben. Der Takt selbst bleibt unverändert (Entscheidung 24).
+     */
+    static long phaseOffsetNanos(int address, long tickNanos) {
+        double f = (address * 0.6180339887498949) % 1.0;
+        return (long) (Math.abs(f) * tickNanos);
+    }
+
+    /** Takt: Bewegungsrechnung um den eigenen Versatz verschoben (ein Durchlauf je Takt bleibt). */
+    private void onTick(long now) {
+        if (finished()) return;
+        if (phaseNanos == 0) { update(now); return; }
+        if (phaseAction != null && phaseAction.isPending()) phaseAction.cancel();
+        phaseAction = ex.schedule(now + phaseNanos, "Takt " + order.trainId(), () -> update(ex.clock().nanoTime()));
+    }
+
     // ------------------------------------------------------------------ Ablauf
 
     private void begin() {
@@ -185,20 +213,26 @@ public final class TrainDriver {
         double sigma = est.sigmaMm(uncertainty);
         if (checkMissingPoints(now, sigma)) return;
 
-        // Befehlsverzögerung = eingemessene Verzögerung + voraussichtliche Wartezeit im Befehlsplaner
-        double sEff = est.predictPositionMm(now + commandDelayNanos + ex.scheduler().expectedWaitNanos(CommandPriority.SAFETY));
+        // Befehlsverzögerung = eingemessene Verzögerung + voraussichtliche Wartezeit im Befehlsplaner, je nach Klasse:
+        // planmäßige Bremsstufen laufen als Automatik, Eingriffe der Überwachung als Sicherheit (Entscheidung 28)
+        long delay = commandDelayNanos;
+        double sEff = est.predictPositionMm(now + delay + ex.scheduler().expectedWaitNanos(CommandPriority.SAFETY));
+        double sPlan = est.predictPositionMm(now + delay + ex.scheduler().expectedWaitNanos(CommandPriority.AUTOMATIC));
         double vSup = supervision(sEff, sigma);
         double va = plan.approachSpeedMmS();
-        int step = profile.stepFor(dir, allowed(sEff, sigma));
+        int planStep = profile.stepFor(dir, planned(sPlan, sigma));
+        if (plan.platform() && planStep < plan.approachStep()) planStep = plan.approachStep();
+        int step = Math.min(planStep, profile.stepFor(dir, vSup));
         if (plan.platform() && step < plan.approachStep() && vSup >= va) step = plan.approachStep();
         step = Math.min(step, lastStep);   // nie wieder beschleunigen
+        boolean intervention = step < Math.min(planStep, lastStep);   // die Überwachung verlangt weniger als der Plan
 
         if (step == 0) {
-            if (plan.platform()) haltNow(now, "Überwachung des Freigabeendes", true);
+            if (intervention) { interventions++; haltNow(now, "Überwachung des Freigabeendes", true); }
             else haltNow(now, "Halt vor " + plan.stop().id(), false);
             return;
         }
-        if (step != lastStep && !send(now, step)) return;
+        if (step != lastStep && !send(now, step, intervention)) return;
 
         if (plan.platform() && lastStep == plan.approachStep() && est.settled()
                 && Math.abs(est.speedMmS() - va) < 1e-9) {
@@ -209,7 +243,10 @@ public final class TrainDriver {
     }
 
     /** Höchste zulässige Geschwindigkeit an Stelle x (Bremskurven, Überfahrtempo, Überwachung). */
-    private double allowed(double x, double sigma) {
+    private double allowed(double x, double sigma) { return Math.min(planned(x, sigma), supervision(x, sigma)); }
+
+    /** Planmäßige Bremskurven an Stelle x (Bremskurven, Überfahrtempo), ohne Überwachung des Freigabeendes. */
+    private double planned(double x, double sigma) {
         double b = plan.decelMmS2();
         double v = order.lineSpeedMmS();
         if (plan.platform()) {
@@ -220,7 +257,7 @@ public final class TrainDriver {
             double upper = x + settings.safetySigmas() * sigma;
             v = Math.min(v, BrakeCurve.supervision(plan.targetMm() - upper, b, plan.reactionSeconds()));
         }
-        return Math.min(v, supervision(x, sigma));
+        return v;
     }
 
     /** Überwachung des Freigabeendes mit oberer Positionsschranke. */
@@ -294,9 +331,18 @@ public final class TrainDriver {
         if (state != State.STOPPING) haltNow(now, "Fahrbefehl beim Senden verworfen: " + reason, true);
     }
 
-    private boolean send(long now, int step) {
-        // Bremsstufen der Halteplanung: Sicherheitsklasse (sie halten das Freigabeende ein)
-        boolean ok = ex.commands().drive(order.address(), step, order.steps(), dir, CommandPriority.SAFETY, listener);
+    /**
+     * Fahrstufe senden. Planmäßige Bremsstufen als Automatik (innerhalb der Klasse Absenkung vor Anfahren), Eingriffe
+     * der Überwachung als Sicherheit (Entscheidung 28); ein Sicherheitsbefehl ersetzt eine wartende Bremsstufe.
+     */
+    private boolean send(long now, int step, boolean intervention) {
+        if (intervention) {
+            if (interventions++ == 0)
+                journal.warn("fahrt", "SUPERVISION_INTERVENTION", "Überwachung des Freigabeendes greift bei " + order.trainId()
+                        + ": Stufe " + step + " statt " + lastStep + " (Position " + fmt(est.positionMm()) + " mm; weitere Eingriffe gezählt)");
+        }
+        CommandPriority p = intervention ? CommandPriority.SAFETY : CommandPriority.AUTOMATIC;
+        boolean ok = ex.commands().drive(order.address(), step, order.steps(), dir, p, listener);
         if (!ok) {
             haltNow(now, "Fahrbefehl Stufe " + step + " abgewiesen", true);
             return false;
@@ -351,6 +397,7 @@ public final class TrainDriver {
     private void cancelActions() {
         if (stopAction != null) stopAction.cancel();
         if (updateAction != null) updateAction.cancel();
+        if (phaseAction != null) phaseAction.cancel();
     }
 
     // ------------------------------------------------------------------ Meldepunkte

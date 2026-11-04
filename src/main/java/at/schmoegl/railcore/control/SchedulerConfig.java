@@ -27,7 +27,8 @@ import java.util.Locale;
  * </ul>
  * Daraus: 0 aktive Loks 75 Befehle/s, 10 → 70, 25 → 62,5, 50 → 50, 100 → 25 Befehle/s.
  * <p>
- * <b>Ausgabe:</b> Token-Bucket mit {@code burstCommands} Inhalt, gleichmäßig über die Zeit verteilt. Haltebefehle
+ * <b>Ausgabe:</b> Token-Bucket mit {@code burstCommands} Inhalt (Standard 4, Entscheidung 28; größer würde den Stau
+ * in die Z21 verlagern, wo unser Vorrang nicht mehr wirkt), gleichmäßig über die Zeit verteilt. Haltebefehle
  * (Fahrstufe 0) dürfen das Budget um höchstens {@code haltBorrowCommands} überziehen, damit sie nie auf ein Token
  * warten; die Schuld wird danach abgetragen.
  * <p>
@@ -47,7 +48,7 @@ public record SchedulerConfig(double packetMillis, double reserveFraction, int r
                               int demandWindowSeconds) {
 
     public static SchedulerConfig defaults() {
-        return new SchedulerConfig(6.0, 0.10, 1, 1.0, 5.0, 2.0, 2.0, 2, 60, 25,
+        return new SchedulerConfig(6.0, 0.10, 1, 1.0, 5.0, 4.0, 2.0, 2, 60, 25,
                 50, 150, 300, 500, 5_000, 2, 10, 60, 3);
     }
 

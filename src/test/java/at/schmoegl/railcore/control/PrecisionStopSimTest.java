@@ -269,6 +269,17 @@ public class PrecisionStopSimTest {
         assertTrue(r.driver().fixCount() == 1, "ein Abgleich am Meldepunkt");
     }
 
+    public void testTickUpdatesRunWithTheTrainsPhaseOffset() {
+        Result r = run(11, Scenario.platform(100, 2500, 2200, 2700));
+        long phase = r.driver().phaseNanos();
+        assertEquals(TrainDriver.phaseOffsetNanos(3, 50 * MS), phase);
+        assertTrue(phase > 0 && phase < 50 * MS, "Versatz im Takt");
+        // kein Fahrbefehl auf dem Taktraster (bei einem Zug sind alle Bremsstufen ohnehin exakt eingeplant)
+        long onGrid = r.station().drives().stream().filter(d -> d.step() > 0 && d.issuedNanos() > 0
+                && d.issuedNanos() % (50 * MS) == 0).count();
+        assertEquals(0L, onGrid);
+    }
+
     public void testEmergencyStopDuringApproachIsImmediateAndEndsDrive() {
         Run run = new Run(13, Scenario.platform(100, 2500, 2200, 2700));
         run.start();
