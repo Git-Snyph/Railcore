@@ -377,19 +377,57 @@ public class TrackGraphTest {
 
     // --- Doppelkreuzungsweiche (Grundmodell) --------------------------------------------------------------------
 
-    public void testDoubleSlipRoutesFollowBothHalves() {
-        TrackPiece.DoubleSlipPiece dkw = new TrackPiece.DoubleSlipPiece("TEST-DKW",
+    /** DKW-Typ mit Vorschlagswerten; maßgeblich sind die Werte je verlegter DKW (Entscheidung 41). */
+    static TrackPiece.DoubleSlipPiece dkwPiece(DoubleSlipLogic logic) {
+        return new TrackPiece.DoubleSlipPiece("TEST-DKW",
                 new TrackPiece.DoubleSlipLengths(Map.of(Port.A1_B1, 230.0, Port.A2_B2, 230.0, Port.A1_B2, 230.0, Port.A2_B1, 230.0)),
-                DoubleSlipLogic.provisionalAssumption());
-        // Instanzwerte der verlegten DKW sind maßgeblich, nicht der Typ-Vorschlag (Entscheidung 41)
-        TrackPiece.DoubleSlipLengths lengths = new TrackPiece.DoubleSlipLengths(Map.of(
-                Port.A1_B1, 231.0, Port.A2_B2, 231.0, Port.A1_B2, 236.5, Port.A2_B1, 236.5));
-        TrackGraph.Builder b = TrackGraph.builder().placeDoubleSlip("d", dkw, "d.A", "d.B", lengths);
-        for (Port p : List.of(Port.A1, Port.A2, Port.B1, Port.B2)) {
+                DoubleSlipClearances.uniform(100), logic);
+    }
+
+    static final TrackPiece.DoubleSlipLengths DKW_LENGTHS = new TrackPiece.DoubleSlipLengths(Map.of(
+            Port.A1_B1, 231.0, Port.A2_B2, 231.0, Port.A1_B2, 236.5, Port.A2_B1, 236.5));
+
+    /** DKW d mit vier Anschlussgleisen xA1, xA2, xB1, xB2 (je 1000 mm, am Anschluss A an der DKW, B = Prellbock). */
+    static TrackGraph doubleSlip(DoubleSlipLogic logic, DoubleSlipClearances clearances) {
+        TrackGraph.Builder b = TrackGraph.builder().placeDoubleSlip("d", dkwPiece(logic), "d.A", "d.B", DKW_LENGTHS, clearances);
+        for (Port p : DoubleSlipClearances.OUTER_PORTS) {
             String id = "x" + p;
             b.place(id, G1000).connect("d", p, id, Port.A).bufferStop(id, Port.B);
         }
-        TrackGraph g = b.build();
+        return b.build();
+    }
+
+    public void testDoubleSlipClearancesPerOuterPort() {
+        // Instanzwerte, nicht der Typ-Vorschlag (100 mm)
+        DoubleSlipClearances entered = new DoubleSlipClearances(Map.of(Port.A1, 80.0, Port.A2, 95.0, Port.B1, 120.0, Port.B2, 60.0));
+        TrackGraph g = doubleSlip(DoubleSlipLogic.provisionalAssumption(), entered);
+        assertEquals(entered, ((TrackNode.DoubleSlipNode) g.node("d.A")).clearances());
+        assertLocation(new TrackLocation("xA1", 80), g.doubleSlipClearancePoints("d.A", Port.A1).getFirst());
+        assertLocation(new TrackLocation("xA2", 95), g.doubleSlipClearancePoints("d.A", Port.A2).getFirst());
+        assertLocation(new TrackLocation("xB1", 120), g.doubleSlipClearancePoints("d.B", Port.B1).getFirst());
+        assertLocation(new TrackLocation("xB2", 60), g.doubleSlipClearancePoints("d.B", Port.B2).getFirst());
+        assertEquals(1, g.doubleSlipClearancePoints("d.B", Port.B2).size());
+        assertThrows(IllegalArgumentException.class, () -> g.doubleSlipClearancePoints("d.A", Port.B1));
+        assertThrows(IllegalArgumentException.class, () -> g.doubleSlipClearancePoints("xA1", Port.A1));
+    }
+
+    public void testDoubleSlipClearanceValidation() {
+        // Pflichtangabe: fehlt sie, wird nicht stillschweigend der Typ-Vorschlag genommen
+        TrackGraphException missing = expectGraphError(() -> TrackGraph.builder()
+                .placeDoubleSlip("d", dkwPiece(DoubleSlipLogic.provisionalAssumption()), "d.A", "d.B", DKW_LENGTHS, null).build());
+        assertTrue(missing.problems().getFirst().contains("Grenzzeichen"), missing.problems().toString());
+        // hinter dem Gleisende (Anschlussgleis 1000 mm)
+        TrackGraphException beyond = expectGraphError(() -> doubleSlip(DoubleSlipLogic.provisionalAssumption(),
+                new DoubleSlipClearances(Map.of(Port.A1, 80.0, Port.A2, 80.0, Port.B1, 1200.0, Port.B2, 80.0))));
+        assertTrue(beyond.problems().getFirst().contains("d.B (B1)"), beyond.problems().toString());
+        assertThrows(IllegalArgumentException.class, () -> DoubleSlipClearances.uniform(0));
+        assertThrows(IllegalArgumentException.class, () -> new DoubleSlipClearances(Map.of(Port.A1, 80.0)));
+        assertThrows(IllegalArgumentException.class, () -> new DoubleSlipClearances(
+                Map.of(Port.A1, 80.0, Port.A2, 80.0, Port.B1, 80.0, Port.A1_B1, 80.0)));
+    }
+
+    public void testDoubleSlipRoutesFollowBothHalves() {
+        TrackGraph g = doubleSlip(DoubleSlipLogic.provisionalAssumption(), DoubleSlipClearances.uniform(90));
         assertEquals(NodeKind.DOUBLE_SLIP, g.node("d.A").kind());
         assertNear(236.5, g.edge("d.A1_B2").lengthMm(), "Bogenfahrweg aus Instanzwert");
         assertEquals(1, g.notices().size());

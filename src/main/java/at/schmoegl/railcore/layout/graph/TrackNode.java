@@ -91,9 +91,13 @@ public sealed interface TrackNode
     /**
      * Eine Seite ({@code sideA = true}: A1/A2, sonst B1/B2) einer Doppelkreuzungsweiche. Die vier Fahrwegkanten
      * verbinden die Knoten beider Seiten; jeder Fahrweg verlangt die Lage beider Hälften nach {@code logic}.
+     * {@code clearances} sind die Grenzzeichen der verlegten DKW (beide Knoten tragen dieselben Werte).
      */
-    record DoubleSlipNode(String id, boolean sideA, String turnoutIdA, String turnoutIdB, DoubleSlipLogic logic)
-            implements TrackNode {
+    record DoubleSlipNode(String id, boolean sideA, String turnoutIdA, String turnoutIdB, DoubleSlipLogic logic,
+                          DoubleSlipClearances clearances) implements TrackNode {
+        /** Außenanschlüsse dieser Seite. */
+        public List<Port> outerPorts() { return sideA ? List.of(Port.A1, Port.A2) : List.of(Port.B1, Port.B2); }
+
         @Override public NodeKind kind() { return NodeKind.DOUBLE_SLIP; }
 
         @Override public List<Port> ports() {

@@ -40,7 +40,8 @@ public final class TrackGraph {
 
     private record Attachment(TrackEdge edge, boolean atFrom) {}
 
-    private record ClearanceKey(String node, TurnoutPosition branch) {}
+    /** Grenzzeichen-Schlüssel: Knoten und Anschluss, an dem der Schenkel beginnt (Weiche: STRAIGHT/DIVERGING, DKW: Außenanschluss). */
+    private record ClearanceKey(String node, Port port) {}
 
     private final Map<String, TrackNode> nodes;
     private final Map<String, TrackEdge> edges;
@@ -182,36 +183,59 @@ public final class TrackGraph {
     public List<TrackLocation> clearancePoints(String turnoutNodeId, TurnoutPosition branch) {
         if (!(node(turnoutNodeId) instanceof TrackNode.TurnoutNode))
             throw new IllegalArgumentException("Knoten " + turnoutNodeId + " ist keine Weiche");
-        return clearances.get(new ClearanceKey(turnoutNodeId, TurnoutBranches.requireBranch(branch)));
+        Port port = TurnoutBranches.requireBranch(branch) == TurnoutPosition.STRAIGHT ? Port.STRAIGHT : Port.DIVERGING;
+        return clearances.get(new ClearanceKey(turnoutNodeId, port));
+    }
+
+    /**
+     * Grenzzeichen der Doppelkreuzungsweiche am Außenanschluss {@code outer} (Knoten {@code doubleSlipNodeId} ist die
+     * Seite, zu der der Anschluss gehört: {@code d.A} für A1/A2, {@code d.B} für B1/B2). Wie bei der Weiche gibt es je
+     * möglicher Fortsetzung hinter einem weiteren verzweigenden Knoten einen Ort (vorsichtig: alle gelten).
+     */
+    public List<TrackLocation> doubleSlipClearancePoints(String doubleSlipNodeId, Port outer) {
+        if (!(node(doubleSlipNodeId) instanceof TrackNode.DoubleSlipNode d))
+            throw new IllegalArgumentException("Knoten " + doubleSlipNodeId + " ist keine Doppelkreuzungsweiche");
+        if (!d.outerPorts().contains(outer))
+            throw new IllegalArgumentException("Knoten " + doubleSlipNodeId + " hat keinen Außenanschluss " + outer);
+        return clearances.get(new ClearanceKey(doubleSlipNodeId, outer));
     }
 
     private Map<ClearanceKey, List<TrackLocation>> resolveClearances(List<String> problems) {
         Map<ClearanceKey, List<TrackLocation>> clearances = new HashMap<>();
         for (TrackNode n : nodes.values()) {
-            if (!(n instanceof TrackNode.TurnoutNode t)) continue;
-            for (TurnoutPosition branch : List.of(TurnoutPosition.STRAIGHT, TurnoutPosition.DIVERGING)) {
-                Port port = branch == TurnoutPosition.STRAIGHT ? Port.STRAIGHT : Port.DIVERGING;
-                List<TrackLocation> found = new ArrayList<>();
-                collectClearance(leaving(t.id(), port), t.branches().clearanceMm(branch), found, t, branch, problems, 0);
-                clearances.put(new ClearanceKey(t.id(), branch), List.copyOf(found));
+            if (n instanceof TrackNode.TurnoutNode t) {
+                for (TurnoutPosition branch : List.of(TurnoutPosition.STRAIGHT, TurnoutPosition.DIVERGING)) {
+                    Port port = branch == TurnoutPosition.STRAIGHT ? Port.STRAIGHT : Port.DIVERGING;
+                    List<TrackLocation> found = new ArrayList<>();
+                    collectClearance(leaving(t.id(), port), t.branches().clearanceMm(branch), found,
+                            "der Weiche " + t.id() + " (" + branch + ")", problems, 0);
+                    clearances.put(new ClearanceKey(t.id(), port), List.copyOf(found));
+                }
+            } else if (n instanceof TrackNode.DoubleSlipNode d) {
+                // Ab dem Außenanschluss nach außen; die Kante dort führt vom DKW-Knoten weg.
+                for (Port outer : d.outerPorts()) {
+                    List<TrackLocation> found = new ArrayList<>();
+                    collectClearance(leaving(d.id(), outer), d.clearances().clearanceMm(outer), found,
+                            "der Doppelkreuzungsweiche " + d.id() + " (" + outer + ")", problems, 0);
+                    clearances.put(new ClearanceKey(d.id(), outer), List.copyOf(found));
+                }
             }
         }
         return clearances;
     }
 
-    private void collectClearance(DirectedEdge e, double remaining, List<TrackLocation> out, TrackNode.TurnoutNode t,
-                                  TurnoutPosition branch, List<String> problems, int depth) {
+    private void collectClearance(DirectedEdge e, double remaining, List<TrackLocation> out, String what,
+                                  List<String> problems, int depth) {
         if (remaining <= e.lengthMm()) {
             out.add(e.locationAt(remaining));
             return;
         }
         List<Step> steps = steps(e);
         if (steps.isEmpty() || depth > edges.size()) {
-            problems.add("Grenzzeichen der Weiche " + t.id() + " (" + branch + ") liegt hinter dem Gleisende "
-                    + e.endNode());
+            problems.add("Grenzzeichen " + what + " liegt hinter dem Gleisende " + e.endNode());
             return;
         }
-        for (Step s : steps) collectClearance(s.next(), remaining - e.lengthMm(), out, t, branch, problems, depth + 1);
+        for (Step s : steps) collectClearance(s.next(), remaining - e.lengthMm(), out, what, problems, depth + 1);
     }
 
     // ------------------------------------------------------------------------------------------------------------
@@ -232,8 +256,8 @@ public final class TrackGraph {
 
         /** Verlegtes Stück mit seinen Instanzwerten (nur die zur Art passenden sind gesetzt, sonst {@code null}). */
         private record Placement(String instanceId, TrackPiece piece, List<String> turnoutIds, TurnoutBranches branches,
-                                 TrackPiece.DoubleSlipLengths routeLengths, TrackPiece.CrossingDimensions crossing,
-                                 Double plainLengthMm) {}
+                                 TrackPiece.DoubleSlipLengths routeLengths, DoubleSlipClearances slipClearances,
+                                 TrackPiece.CrossingDimensions crossing, Double plainLengthMm) {}
 
         private record PortRef(String instanceId, Port port) {
             @Override public String toString() { return instanceId + "." + port; }
@@ -261,7 +285,7 @@ public final class TrackGraph {
                         + " verlegen");
                 return this;
             }
-            return add(instanceId, piece, List.of(), null, null, null, null);
+            return add(instanceId, piece, List.of(), null, null, null, null, null);
         }
 
         /**
@@ -280,7 +304,7 @@ public final class TrackGraph {
                 problems.add("Stück " + instanceId + ": eigene Länge muss größer 0 sein: " + lengthMm);
                 return this;
             }
-            return add(instanceId, piece, List.of(), null, null, null, lengthMm);
+            return add(instanceId, piece, List.of(), null, null, null, null, lengthMm);
         }
 
         /**
@@ -292,7 +316,7 @@ public final class TrackGraph {
                 problems.add("Kreuzung " + instanceId + ": Maße fehlen");
                 return this;
             }
-            return add(instanceId, piece, List.of(), null, null, dimensions, null);
+            return add(instanceId, piece, List.of(), null, null, null, dimensions, null);
         }
 
         /**
@@ -307,25 +331,26 @@ public final class TrackGraph {
                 problems.add("Weiche " + instanceId + ": Zweiglängen und Grenzzeichen fehlen");
                 return this;
             }
-            return add(instanceId, piece, List.of(turnoutId), branches, null, null, null);
+            return add(instanceId, piece, List.of(turnoutId), branches, null, null, null, null);
         }
 
         /**
-         * Verlegt eine Doppelkreuzungsweiche mit den Fahrweglängen dieser DKW (maßgeblich, Entscheidung 41) und den
-         * logischen Kennungen beider Hälften.
+         * Verlegt eine Doppelkreuzungsweiche mit den Fahrweglängen und Grenzzeichen dieser DKW (maßgeblich,
+         * Entscheidung 41) und den logischen Kennungen beider Hälften. Die Vorschläge des Typs werden nicht gelesen.
          */
         public Builder placeDoubleSlip(String instanceId, TrackPiece.DoubleSlipPiece piece, String turnoutIdA,
-                                       String turnoutIdB, TrackPiece.DoubleSlipLengths routeLengths) {
-            if (routeLengths == null) {
-                problems.add("Doppelkreuzungsweiche " + instanceId + ": Fahrweglängen fehlen");
+                                       String turnoutIdB, TrackPiece.DoubleSlipLengths routeLengths,
+                                       DoubleSlipClearances clearances) {
+            if (routeLengths == null || clearances == null) {
+                problems.add("Doppelkreuzungsweiche " + instanceId + ": Fahrweglängen oder Grenzzeichen fehlen");
                 return this;
             }
-            return add(instanceId, piece, List.of(turnoutIdA, turnoutIdB), null, routeLengths, null, null);
+            return add(instanceId, piece, List.of(turnoutIdA, turnoutIdB), null, routeLengths, clearances, null, null);
         }
 
         private Builder add(String instanceId, TrackPiece piece, List<String> turnoutIds, TurnoutBranches branches,
-                            TrackPiece.DoubleSlipLengths routeLengths, TrackPiece.CrossingDimensions crossing,
-                            Double plainLengthMm) {
+                            TrackPiece.DoubleSlipLengths routeLengths, DoubleSlipClearances slipClearances,
+                            TrackPiece.CrossingDimensions crossing, Double plainLengthMm) {
             if (instanceId == null || !INSTANCE_ID.matcher(instanceId).matches()) {
                 problems.add("Ungültige Stückkennung: '" + instanceId + "'");
                 return this;
@@ -339,8 +364,8 @@ public final class TrackGraph {
                     problems.add("Stück " + instanceId + ": Weichenkennung fehlt");
                     return this;
                 }
-            if (placements.putIfAbsent(instanceId, new Placement(instanceId, piece, turnoutIds, branches, routeLengths, crossing,
-                    plainLengthMm)) != null)
+            if (placements.putIfAbsent(instanceId, new Placement(instanceId, piece, turnoutIds, branches, routeLengths,
+                    slipClearances, crossing, plainLengthMm)) != null)
                 problems.add("Stückkennung doppelt: " + instanceId);
             return this;
         }
@@ -507,8 +532,8 @@ public final class TrackGraph {
                     String b = id + ".B";
                     String tA = p.turnoutIds().get(0);
                     String tB = p.turnoutIds().get(1);
-                    nodes.put(a, new TrackNode.DoubleSlipNode(a, true, tA, tB, dk.logic()));
-                    nodes.put(b, new TrackNode.DoubleSlipNode(b, false, tA, tB, dk.logic()));
+                    nodes.put(a, new TrackNode.DoubleSlipNode(a, true, tA, tB, dk.logic(), p.slipClearances()));
+                    nodes.put(b, new TrackNode.DoubleSlipNode(b, false, tA, tB, dk.logic(), p.slipClearances()));
                     for (Port r : List.of(Port.A1_B1, Port.A1_B2, Port.A2_B1, Port.A2_B2)) {
                         EdgeDraft d = draft(drafts, id + "." + r, p.routeLengths().lengthMm(r), id, TrackEdge.Role.DOUBLE_SLIP_ROUTE);
                         d.fromNode = a;

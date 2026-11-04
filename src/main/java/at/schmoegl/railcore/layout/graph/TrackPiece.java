@@ -106,13 +106,14 @@ public sealed interface TrackPiece
      * über zwei gekoppelte Weichenhälften (Seite A, Seite B) nach {@link DoubleSlipLogic} der Bauart.
      *
      * <p>Wie bei der einfachen Weiche sind die Fahrweglängen der <b>verlegten</b> DKW maßgeblich
-     * ({@link TrackGraph.Builder#placeDoubleSlip}, Entscheidung 41); der Typ liefert nur {@code suggestion}.
-     * Grenzzeichen der DKW sind noch nicht erfasst (offen für B2).
+     * ({@link TrackGraph.Builder#placeDoubleSlip}, Entscheidung 41); der Typ liefert nur {@code suggestion} und
+     * {@code clearanceSuggestion} (Grenzzeichen je Außenanschluss, {@link DoubleSlipClearances}).
      */
-    record DoubleSlipPiece(String id, DoubleSlipLengths suggestion, DoubleSlipLogic logic) implements TrackPiece {
+    record DoubleSlipPiece(String id, DoubleSlipLengths suggestion, DoubleSlipClearances clearanceSuggestion,
+                           DoubleSlipLogic logic) implements TrackPiece {
         public DoubleSlipPiece {
             requireId(id);
-            if (logic == null || suggestion == null)
+            if (logic == null || suggestion == null || clearanceSuggestion == null)
                 throw new IllegalArgumentException("Doppelkreuzungsweiche " + id + ": Stelllogik oder Vorschlagswerte fehlen");
         }
 
