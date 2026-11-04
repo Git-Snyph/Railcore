@@ -44,3 +44,12 @@ Jeder Eingriff wird im Klartext angekündigt und nur nach der Eingabe `JA` (Gro�
 - RailCom-Adressen 8888 und 8000 (Modul 14, Eingänge 2 und 5) sind echte Lokadressen – Adressdekodierung damit an Hardware bestätigt. Deutung der Richtungsbits (Rohwerte 2 und 3) weiter offen.
 - **Offen, zurückgestellt: R-Bus-Versatz um ein Modul.** Die Z21 spiegelt die CAN-Belegung in die R-Bus-Daten; das Muster von CAN-Modul 14 erscheint als R-Bus-Modul 15, das von Modul 15 als Modul 16. R-Bus-Daten dürfen nirgends genutzt werden, bevor die Zählung geklärt und mit einem Test abgesichert ist.
 - Beobachtung und WLAN-Maus nicht geprüft: Lauf ohne Konsole, die Beobachtung brach sofort ab (Fehler, behoben: geschlossene Eingabe beendet die Beobachtung nicht mehr). Nächster Lauf in einem eigenen PowerShell-Fenster.
+
+### 04.11.2026 – zweiter passiver Lauf (90 s, eigene Konsole)
+- Beobachtung lief die volle Zeit. 29 bestätigt, 2 unbekannt, keine Abweichung.
+- Fahrbetrieb mit iTrain (LAN-Client der Z21): Lok 8800 vorwärts, dann rückwärts.
+- **RailCom-Richtungsbits:** 8800 meldete in beiden Fahrtrichtungen durchgehend den Rohwert 3. Die Bits geben damit nicht die Fahrtrichtung an; naheliegend ist die Aufgleisrichtung (Orientierung der Lok). Von elf Loks melden 8888 und 7000 den Wert 2, alle anderen 3. Noch zu bestätigen, z. B. durch Umdrehen einer Lok oder Abgleich mit der tatsächlichen Stellung von 8888 und 7000.
+- **Lok-Broadcast:** Trotz angenommenem Abo (Flag 0x00010000) kam während der Fahrt keine einzige Lokmeldung. Ursache offen: Z21 sendet nicht an diesen Client, oder das Prüfprogramm erkennt die Meldung nicht (Rohpakete im Journal unter `logs/`, DEBUG). Fahrtrichtung laut Zentrale war damit nicht vergleichbar.
+- **RailCom-Daten der Zentrale** (LAN_RAILCOM_DATACHANGED) kamen für 1000, 2000 und 6000.
+- **RailCom-Adressen je Abschnitt:** Die Liste zeigt Adressen auch für inzwischen freie Abschnitte (6000 auf Modul 15/3) und zwei Adressen in einem Abschnitt (1000 und 8888 auf Modul 14/2). Zu klären, ob die Z21 alte Adressen hält oder das Prüfprogramm nur sammelt statt den letzten Stand zu zeigen. Für den Betrieb gilt: Eine Adresse ist einem Abschnitt nur zugeordnet, solange sie dort aktuell gemeldet wird.
+- R-Bus-Versatz unverändert sichtbar (Modul 15 = 0xDF, Modul 16 = 0x04), weiter zurückgestellt.
