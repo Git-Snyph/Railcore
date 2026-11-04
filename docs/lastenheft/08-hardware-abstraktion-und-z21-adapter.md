@@ -14,12 +14,12 @@ Jede Zentrale ist ein Adapter hinter derselben Schnittstelle und meldet ihre **F
 | --- | --- |
 | Verbindung | UDP 21105, Statusabfrage jede Sekunde als Lebenszeichen und Anmeldungserhalt |
 | Firmware | beim Verbinden abfragen und als Fähigkeiten ablegen: CAN-Melder und RailCom ab 1.30 (sonst R-Bus), Funktionen F29–F31 erst ab 1.42; nichts wird vorausgesetzt, nur weil es in der Schnittstelle steht |
-| Melder | CAN (10808) bevorzugt: Belegung, Spannung, Überlast, RailCom-Adressen je Abschnitt; R-Bus als Alternative |
+| Melder | CAN (10808) bevorzugt: Belegung, Spannung, Überlast, RailCom-Adressen je Abschnitt mit Aufgleisrichtung; R-Bus als Alternative (Z21 spiegelt CAN-Belegung in die R-Bus-Daten, Modulzählung um eins versetzt – vor Nutzung zu klären) |
 | Geräteverwaltung | CAN-Geräte erkennen (NetID, Moduladresse, Status), mit Geräteinventar abgleichen |
 | Booster | Strom, Spannung, Temperatur und Kurzschluss je Bezirk, soweit die Z21 sie liefert |
-| Lokzustände | zwei Verfahren: Einzel-Abos für gezielt überwachte Adressen (höchstens 16 je Client) und Lok-Broadcast für alle Loks (Broadcast-Flag 0x00010000, Firmware-abhängig, beim Verbinden geprüft); Kennzahlen getrennt: aktive Zugverbände und gleichzeitig gesteuerte Lokdecoder (Z21-Grenze laut Roco 100) |
+| Lokzustände | zwei Verfahren: Einzel-Abos für gezielt überwachte Adressen (höchstens 16 je Client) und Lok-Broadcast für alle Loks (Broadcast-Flag 0x00010000, Firmware-abhängig, beim Verbinden geprüft; Firmware 1.43 nimmt das Flag an, sendet bei Fahrbefehlen anderer Clients aber keine Lokmeldungen – darauf wird nicht gebaut); Kennzahlen getrennt: aktive Zugverbände und gleichzeitig gesteuerte Lokdecoder (Z21-Grenze laut Roco 100) |
 | Zubehör | Schaltimpuls 150 ms, danach Ausgang aus; Stellzeit je Weiche einstellbar; Adressierungsmodus des Decoders (Roco oder RCN-213) ausdrücklich modelliert, beim Roco 10836 laut Anleitung zu prüfen |
-| Offen, an Hardware zu prüfen | Richtungsbits der RailCom-Adressen, Bitbelegung POM-Zubehör, Lok-Broadcast, Stellvertreter-Adresse mit WLAN-Maus, 10836-Adressierung, Antwortzeiten; geklärt durch das Z21-Prüfprogramm in Meilenstein 1 |
+| Offen, an Hardware zu prüfen | Bitbelegung POM-Zubehör, 10836-Adressierung, Stellvertreter-Adresse mit Handreglern an der Z21, Zusammenspiel der WLAN-Maus mit dem RailCore-LAN-Server, R-Bus-Modulzählung. Geklärt durch das Z21-Prüfprogramm (04.11.2026): RailCom-Richtungsbits = Aufgleisrichtung, nicht Fahrtrichtung; kein Lok-Broadcast bei Fremdsteuerung; Antwortzeiten 1–22 ms. |
 
 **Rohdatenmitschnitt:** Auf Wunsch zeichnet der Adapter alle UDP-Pakete mit Zeitstempel auf (inklusive CAN-Meldermeldungen), für Diagnose und um Fehler später im Simulator nachzuspielen.
 

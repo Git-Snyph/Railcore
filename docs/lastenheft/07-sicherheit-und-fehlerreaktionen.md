@@ -19,15 +19,17 @@ Der Sicherheitsmanager prüft jeden Befehl vor dem Senden und überwacht laufend
 | Handbefehl über Grenze | Wunschgeschwindigkeit über Bremskurve | auf erlaubten Wert begrenzt, Eingriff protokolliert |
 | Interner Fehler | Ausnahme im Kern, Takt überschritten | Nothalt, Diagnosebericht |
 
-**Handbetrieb mit WLAN-Maus über Stellvertreter-Adresse** *(Konzept, an Hardware zu prüfen)*
+**Handbetrieb mit WLAN-Maus über RailCore** *(Entscheidung 21; Zusammenspiel mit der Maus an Hardware zu prüfen)*
 
-Die Z21 bietet keinen Weg, Befehle eines Handreglers vor der Ausführung abzufangen. Deshalb steuert die Maus gar nicht die echte Lok, sondern eine **Stellvertreter-Adresse im Bereich 9000–9999**, auf der garantiert kein Decoder sitzt:
+Die Z21 bietet keinen Weg, Befehle eines Handreglers vor der Ausführung abzufangen, und meldet Fahrbefehle anderer Clients nicht per Lok-Broadcast (Z21-Prüfprogramm, 04.11.2026). Deshalb verbindet sich die WLAN-Maus nicht mit der Z21, sondern mit RailCore: RailCore stellt einen Z21-kompatiblen LAN-Server (UDP 21105) bereit, die Ziel-IP der Maus zeigt auf den RailCore-Rechner.
 
-1. Die Maus fährt z. B. Adresse 9162. Die Z21 führt den Befehl aus, es bewegt sich aber nichts.
-2. Die Z21 meldet die Änderung an die Steuerung (Lok-Abo bzw. Lok-Broadcast).
-3. Die Steuerung prüft Wunschgeschwindigkeit und Funktionen gegen Bremskurve und Reservierung und sendet nur den erlaubten Wert an die echte Lok. Den begrenzten Wert schreibt sie auf die Stellvertreter-Adresse zurück, damit die Maus ihn anzeigt.
+1. Die Maus sendet den Fahrbefehl für die echte Lokadresse an RailCore.
+2. RailCore prüft Wunschgeschwindigkeit und Funktionen gegen Bremskurve und Reservierung und sendet nur den erlaubten Wert über den Befehlsplaner an die Z21.
+3. RailCore meldet der Maus den tatsächlich erlaubten Wert zurück, damit die Anzeige stimmt.
 
-Die echte Lok erhält damit nie einen ungeprüften Handbefehl. Fällt die Steuerung aus, steht der Zug (ausfallsicher). Der Bereich 9000–9999 ist ausschließlich dafür reserviert; die Prüfung meldet jeden echten Decoder in diesem Bereich als Fehler (Wagendecoder brauchen einen anderen Bereich). Wird die echte Adresse trotzdem direkt angesteuert, greift die Nachkorrektur mit größerem Sicherheitsabstand und einer Warnung. Zu prüfen am Z21-Prüfprogramm: Meldung der Maus-Befehle, Verzögerung, Rückschreiben auf die Maus-Anzeige.
+Die echte Lok erhält damit nie einen ungeprüften Handbefehl. Fällt RailCore aus, ist die Maus wirkungslos und der Zug steht (ausfallsicher); Not-Aus ohne PC über Hardware-Watchdog und Taster. Nachzubauen ist die Teilmenge des Z21-Protokolls, die die Maus nutzt: Anmeldung, Seriennummer, Version und HW-Info, Lokinfo, Fahren, Funktionen, Weichen, Stopp, Gleisspannung.
+
+**Handregler an der Z21 über Stellvertreter-Adresse** *(Z21-App, X-Bus-Geräte, Zimo KLUG; an Hardware zu prüfen)*: Der Handregler fährt eine Adresse im Bereich 9000–9999, auf der garantiert kein Decoder sitzt; die Z21 führt den Befehl aus, es bewegt sich nichts. Weil kein Lok-Broadcast kommt, überwacht RailCore die Stellvertreter-Adressen per Einzel-Abo, prüft den Wunsch, sendet nur den erlaubten Wert an die echte Lok und schreibt den begrenzten Wert auf die Stellvertreter-Adresse zurück. Der Bereich 9000–9999 ist ausschließlich dafür reserviert; die Prüfung meldet jeden echten Decoder darin als Fehler (Wagendecoder brauchen einen anderen Bereich). Wird die echte Adresse trotzdem direkt angesteuert, greift die Nachkorrektur mit größerem Sicherheitsabstand und einer Warnung.
 
 **Freigabe nach Nothalt:** Ein Nothalt wird nie automatisch aufgehoben. Die Freigabe verlangt eine eigene Bedienhandlung, die angezeigte Ursache und die geprüften Zugpositionen; sie kann nicht über dieselbe Taste erfolgen, die den Nothalt ausgelöst hat.
 

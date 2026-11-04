@@ -18,7 +18,7 @@ Jede Zugposition ist ein Punkt im Gleisgraph (Kante + mm) für die Zugspitze, da
 | **Decoder Motion Control** (Ausnahme) | Decoder übernimmt die Verzögerung mit seinen eingestellten CVs; die Steuerung rechnet mit dem gemessenen Verhalten einschließlich Decoder-Rampe; ändern sich CV3/CV4, ist das Profil ungültig | Loks, bei denen das Soundprojekt ohne Decoder-Rampe nicht stimmig klingt oder der Decoder es erfordert |
 
 - Der Modus wird je Lok in der Datenbank geführt und nie gemischt; die Decoder-Werkstatt prüft, ob die CVs zum Modus passen, und warnt bei Abweichung.
-- Beide Modi gelten für jede Fahrt: Automatik, Fahrplan und Handbetrieb über die Stellvertreter-Adresse.
+- Beide Modi gelten für jede Fahrt: Automatik, Fahrplan und Handbetrieb (WLAN-Maus über RailCore, Handregler an der Z21 über die Stellvertreter-Adresse).
 - Fahrbefehle laufen über den \*\*Befehlsplaner\*\* (siehe unten), der die Rate je Zug dynamisch nach Z21- und Gleislast festlegt.
 - **Bremsweg wird gerechnet:** aus Geschwindigkeit, Masse-Modell bzw. Messung und Streckenprofil. Ein schwerer Güterzug beginnt deutlich früher zu bremsen als ein Triebwagen und hält trotzdem am selben Haltepunkt.
 
@@ -43,7 +43,7 @@ Eingemessen wird das Grundverhalten der Lok (Geschwindigkeit je Fahrstufe, Reakt
 **Abgleich und Unsicherheit**
 
 - Spricht ein Meldeabschnitt an, wird die Zugspitze auf seinen Meldepunkt gesetzt, zuzüglich der seit dem Ereignis gefahrenen Strecke und der Melderverzögerung.
-- RailCom bestätigt, welcher Zug den Abschnitt belegt (Adresse, Zeitstempel, soweit verfügbar Richtung).
+- RailCom bestätigt, welcher Zug den Abschnitt belegt (Adresse, Zeitstempel, Aufgleisrichtung der Lok – die RailCom-Richtungsbits zeigen nicht die Fahrtrichtung). Eine RailCom-Adresse gilt nur, solange der Abschnitt belegt gemeldet ist; der 10808 meldet das Verlassen nicht immer mit einer leeren Adresse.
 - Die **Positionsunsicherheit** wächst mit der Strecke seit dem letzten Abgleich (Startwert 2 % der Strecke + 20 mm, wird aus der Statistik je Zug gelernt). Sie geht in Bremspunkt und Reservierung ein.
 - Abweichung beim Abgleich größer als erwartet → Schlupf oder falsches Profil: Warnung, Zug verlangsamt; sehr groß → Halt, „Position unsicher“.
 
