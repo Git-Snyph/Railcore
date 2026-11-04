@@ -18,6 +18,8 @@ Jeder Meilenstein endet mit einem eigenständig testbaren Ergebnis; der nächste
 
 Die Sicherheitsbasis liegt in Meilenstein 1, Reservierung und Verriegelung in 4, also vor der Vollautomatik. Bereits im Datenmodell vorgesehen, aber später umgesetzt: Benutzerrollen, Umlaufplanung, Anschlusszüge, Wetter und Bahnhofsdurchsagen, weitere Zentralen.
 
+**Dokumentation begleitend zu jedem Meilenstein** (Entscheidung 31): Anleitung (`docs/anleitung/`) und Wiki (`docs/wiki/`) als Markdown im Repository, zuerst Deutsch, Englisch vorbereitet. Ein Meilenstein ist erst abgenommen, wenn die Anleitungs- und Wikiseiten zu seinen für Anwender sichtbaren Funktionen geschrieben sind; Entwickler-Seiten werden mit dem Code gepflegt. Die Offline-Hilfe im Programm entsteht mit der Oberfläche (Meilenstein 5) und wird mit dem Installer ausgeliefert.
+
 **Offene Risiken, vor der Vollautomatik zu lösen**
 
 | Risiko | Klärung |

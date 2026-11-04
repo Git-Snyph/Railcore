@@ -57,6 +57,12 @@ Stand: 03.11.2026. Eigene Modellbahn-Steuerung (Java 25), Repository Git-Snyph/R
 - [ ] Home-Assistant-Geräte aus RailCore schalten und abfragen (Schalter, Steckdosen, Licht, Szenen, Sensoren) – nur Komfort, keine Sicherheitsfunktion
 - [ ] iOS- und Android-App zum Steuern (später; nutzt die Netzwerk-Schnittstelle des Kerns)
 
+### Dokumentation
+- [ ] Umfangreiche Anleitung für Anwender (`docs/anleitung/`), Schritt für Schritt von der Installation bis zur Vollautomatik
+- [ ] Wiki (`docs/wiki/`): Nachschlagewissen für Anwender (Z21, Decoder, Fehlerbilder, FAQ, Glossar) und Entwickler-Teil (Architektur, Bauen, Tests, Simulator)
+- [ ] Deutsch zuerst, Englisch vorbereitet (gleiche Dateinamen je Sprache, zweisprachiges Glossar)
+- [ ] Offline-Hilfe im Programm aus denselben Quellen, mit dem Installer ausgeliefert; optional Website
+
 ## Meilensteine
 1. Kern: Zentralen-Schnittstelle, Z21, Simulator, Gleisplan-Modell, wegbasierte Position *(in Arbeit)*
 2. Datenbank + Excel-Import, Einmessen, Anlagenvermessung, ZIMO-Modul

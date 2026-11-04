@@ -9,6 +9,7 @@ Maßgebliche Unterlagen:
 - Jede Änderung am Lastenheft zuerst in docs/lastenheft/, danach im claude.ai-Dokument nachziehen (Entscheidung 25).
 - `docs/ENTSCHEIDUNGEN.md` – Entscheidungsprotokoll. Vor jeder Architekturänderung lesen; neue Entscheidungen oben eintragen.
 - `docs/FEATURES.md` – Anforderungsübersicht
+- `docs/anleitung/` (Anwender-Anleitung) und `docs/wiki/` (Nachschlagewissen für Anwender und Entwickler), je Sprache ein Ordner (`de`, später `en`); Schreibregeln in `docs/dokumentation/RICHTLINIEN.md` (Entscheidung 31). Jede für Anwender sichtbare Änderung zieht Anleitung bzw. Wiki im selben PR nach; Funktionen nie als vorhanden beschreiben, bevor sie gebaut sind.
 
 Sprache: Oberfläche, Kommentare, Dokumentation, Commit-Nachrichten und Protokolltexte auf Deutsch. Bezeichner im Code auf Englisch.
 
