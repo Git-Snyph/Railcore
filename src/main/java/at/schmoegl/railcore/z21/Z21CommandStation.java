@@ -199,6 +199,23 @@ public class Z21CommandStation extends AbstractCommandStation {
     @Override
     public void requestLocoState(int address) { send(Z21Protocol.getLocoInfo(address)); }
 
+    /**
+     * Zustände neu einlesen nach einer Wiederverbindung ohne Neuverbinden (Entscheidung 37): dieselben lesenden
+     * Abfragen wie bei der Anmeldung – Firmware (daraus Fähigkeiten; mit CAN-Meldern folgt wie beim Anmelden die
+     * CAN-Abfrage aller Melder) und Status. Der Vergleichsstand der Melder wird verworfen, damit die Antworten als
+     * Meldung weitergereicht werden. Schaltet nichts.
+     * TODO (Entscheidung 37, Punkt 2): LAN_CAN_DETECTOR als regelmäßige Melderabfrage (Fähigkeit
+     * DETECTOR_STATUS_QUERY) erst nach dem nächsten aktiven Hardware-Lauf anbinden – vorher im Prüfprogramm klären,
+     * ob nicht versorgte Module schweigen und ob alle Ports antworten.
+     */
+    @Override
+    public void refreshState() {
+        canState.clear();
+        railcom.clear();
+        send(Z21Protocol.getFirmwareVersion());
+        send(Z21Protocol.getStatus());
+    }
+
     @Override
     public void setTurnout(int address, TurnoutPosition position) {
         send(Z21Protocol.setTurnout(address, position, true));

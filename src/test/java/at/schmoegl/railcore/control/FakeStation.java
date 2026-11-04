@@ -65,4 +65,5 @@ final class FakeStation extends AbstractCommandStation {
     void heartbeat(long ts) { fire(l -> l.onHeartbeat(ts)); }
     void feedback(int contact, boolean occupied, long ts) { fire(l -> l.onFeedback(contact, occupied, ts)); }
     void trackPower(TrackPower p) { fire(l -> l.onTrackPower(p)); }
+    void locoState(at.schmoegl.railcore.core.LocoState s) { fire(l -> l.onLocoState(s)); }
 }

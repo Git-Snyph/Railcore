@@ -61,4 +61,18 @@ public interface CommandSink {
      * als „unverändert“ unterdrückt. Die Antwort kommt als Lokmeldung über den Steuerungs-Executor.
      */
     boolean requestLocoState(int address, CommandPriority priority);
+
+    /**
+     * Zustand aller Belegtmelder bei der Zentrale abfragen (Melderüberwachung); kein DCC-Paket, kein DCC-Budget. Nur,
+     * wenn die Zentrale die Melderabfrage erkennbar unterstützt; die Antworten kommen als Melderereignisse.
+     *
+     * @return false, wenn abgewiesen oder nicht unterstützt
+     */
+    default boolean requestDetectorStatus(CommandPriority priority) { return false; }
+
+    /**
+     * Zustände der Zentrale neu einlesen (Fähigkeiten, Gleisspannung, Melder), z. B. nach einer Wiederverbindung ohne
+     * Neuverbinden; kein DCC-Paket, kein DCC-Budget. @return false, wenn abgewiesen
+     */
+    default boolean refreshStationState(CommandPriority priority) { return false; }
 }

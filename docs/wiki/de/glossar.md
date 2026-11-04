@@ -10,6 +10,7 @@ Verbindlich für Anleitung, Wiki, Oberfläche und Übersetzungen. Neue Begriffe 
 | Annäherungstempo | approach speed | Langsames Tempo auf der letzten Strecke vor einem Bahnsteighalt (Standard 5 km/h Vorbild) |
 | Aufgleisrichtung | track orientation | Wie die Lok elektrisch zur Schiene steht; das zeigen die RailCom-Richtungsbits des 10808, nicht die Fahrtrichtung |
 | Befehlsplaner | command scheduler | Teil der Steuerung, der alle Befehle nach Vorrang und DCC-Budget an die Zentrale gibt |
+| Bezirk (Booster-Bezirk) | power district | Gleisbereich, den ein Booster bzw. ein Ausgang der Zentrale mit Fahrstrom versorgt; Kurzschluss schaltet nur ihn ab |
 | Bremskurve | braking curve | Höchste zulässige Geschwindigkeit an jeder Stelle vor einem Ziel |
 | DCC-Budget | DCC budget | Zahl der Befehle pro Sekunde, die das Gleis aufnehmen kann |
 | Durchrutschweg | overlap | Gesicherte Strecke hinter einem Halt für den Fall, dass ein Zug zu weit fährt |
@@ -19,11 +20,14 @@ Verbindlich für Anleitung, Wiki, Oberfläche und Übersetzungen. Neue Begriffe 
 | Journal | journal | Protokoll aller Zustandsänderungen, Eingriffe und Störungen |
 | Meldeabschnitt | detection section | Gleisabschnitt, dessen Belegung ein Rückmelder meldet |
 | Meldepunkt | detection point | Stelle, an der ein Melder anspricht und die Position abgeglichen wird |
+| Melderabfrage | detector status query | Abfrage aller Melderzustände bei der Zentrale, auch unveränderter; Grundlage für das Erkennen stummer Melder |
 | Nothalt | emergency stop | Sofortiger Halt, wird nie automatisch aufgehoben |
+| Position unsicher (Zug) | position unsafe (train) | Kennzeichnung nach Kurzschluss oder Spannungsausfall: der Zug darf nur bremsen und halten, bis der Bediener sie aufhebt |
 | Positionsunsicherheit | position uncertainty | Wie weit die gerechnete Position von der wahren abweichen kann; wächst mit der Strecke seit dem letzten Abgleich |
 | Quittieren | acknowledge | Bedienhandlung, die einen Nothalt aufhebt und zum Wiederanlauf führt |
 | Reservierung | reservation | Zuteilung von Abschnitten an genau einen Zug |
 | Rückmelder, Melder | detector | Gerät, das Belegung (und mit RailCom die Lokadresse) meldet |
+| Sicherheitsabstand, größerer (Zug) | increased safety margin (train) | Kennzeichnung, wenn eine Lok anders fuhr als gesendet; bleibt, bis der Bediener sie aufhebt |
 | Software Motion Control | software motion control | Standard: Anfahren und Bremsen rechnet die Steuerung, der Decoder verzögert nicht (CV3/CV4 = 0) |
 | Decoder Motion Control | decoder motion control | Ausnahme je Lok: der Decoder verzögert selbst |
 | Stellvertreter-Adresse | proxy address | Adresse 9000–9999 für Handregler an der Z21; RailCore fährt daraus geprüft den echten Zug |
