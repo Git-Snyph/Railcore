@@ -15,6 +15,7 @@ public final class SimDetector {
     private final double nominalPositionMm;
     private final Distribution delayMillis;
     private final Distribution positionSpreadMm;
+    private final int locoAddress;
 
     private double triggerPositionMm;
     private boolean triggered;
@@ -22,6 +23,16 @@ public final class SimDetector {
     private long deliveredNanos = Long.MIN_VALUE;
 
     public SimDetector(int contact, double nominalPositionMm, Distribution delayMillis, Distribution positionSpreadMm) {
+        this(contact, nominalPositionMm, delayMillis, positionSpreadMm, ANY_LOCO);
+    }
+
+    /**
+     * Meldepunkt, der nur von einer bestimmten Lok ausgelöst wird (mehrere Loks auf eigener Wegkoordinate in einer
+     * Welt, z. B. Lasttests); {@link #ANY_LOCO} = jede Lok.
+     */
+    public SimDetector(int contact, double nominalPositionMm, Distribution delayMillis, Distribution positionSpreadMm,
+                       int locoAddress) {
+        this.locoAddress = locoAddress;
         this.contact = contact;
         this.nominalPositionMm = nominalPositionMm;
         this.delayMillis = Objects.requireNonNull(delayMillis);
@@ -29,7 +40,13 @@ public final class SimDetector {
         this.triggerPositionMm = nominalPositionMm;
     }
 
+    /** Jede Lok löst den Meldepunkt aus. */
+    public static final int ANY_LOCO = -1;
+
     public int contact() { return contact; }
+
+    /** Lok, die den Meldepunkt auslöst, oder {@link #ANY_LOCO}. */
+    public int locoAddress() { return locoAddress; }
 
     public double nominalPositionMm() { return nominalPositionMm; }
 
