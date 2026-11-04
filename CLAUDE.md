@@ -51,6 +51,7 @@ Wenn eine Aufgabe einem dieser Grundsätze widerspricht: nicht umsetzen, sondern
 - Jede neue Logik mit Test. Protokoll-Kodierung gegen bekannte Bytefolgen testen, Sicherheitsverhalten im Simulator (Fehlerkatalog im Lastenheft, Abschnitt 7).
 - Kein Merge, wenn Tests fehlschlagen.
 - Fremdbibliotheken sparsam und nur mit Begründung im Entscheidungsprotokoll.
+- Jede neue Fremdbibliothek in docs/LIZENZEN.md eintragen; nur Lizenzen, die einen kommerziellen Vertrieb als geschlossene Software erlauben (z. B. Apache 2.0, MIT, BSD, EPL); GPL/AGPL nur nach Rückfrage.
 
 ## Erscheinungsbild
 
