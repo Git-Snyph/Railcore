@@ -78,4 +78,4 @@ Logo: `docs/bilder/railcore-logo.png`. Programmsymbol: `docs/bilder/railcore-ico
 
 ## Stand
 
-Meilenstein 1 (Kern und Sicherheitsbasis) in Arbeit. Nächster Schritt: Z21-Prüfprogramm zur Klärung der offenen Hardware-Fragen; danach Umstellung auf den zentralen Executor, Simulator und Positionsverfolgung.
+Meilenstein 1 (Kern und Sicherheitsbasis) in Arbeit. Z21-Prüfprogramm ist fertig (`docs/Z21-PRUEFPROGRAMM.md`, Entscheidung 20). Nächster Schritt: Läufe an der echten Z21 durch den Nutzer (erst passiv, dann aktiv) und Auswertung der Prüfberichte; die als „an Hardware zu prüfen“ markierten Punkte danach im Code und in der Doku als geklärt oder abweichend nachziehen. Danach Umstellung auf den zentralen Executor, Simulator und Positionsverfolgung.
