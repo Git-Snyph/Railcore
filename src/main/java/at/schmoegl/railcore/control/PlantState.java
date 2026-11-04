@@ -1,12 +1,14 @@
 package at.schmoegl.railcore.control;
 
 import at.schmoegl.railcore.core.Contacts;
+import at.schmoegl.railcore.core.DistrictPower;
 import at.schmoegl.railcore.core.LocoState;
 import at.schmoegl.railcore.core.StationCapabilities;
 import at.schmoegl.railcore.core.TrackPower;
 import at.schmoegl.railcore.core.TurnoutPosition;
 import at.schmoegl.railcore.diag.Journal;
 import at.schmoegl.railcore.safety.CommunicationWatchdog;
+import at.schmoegl.railcore.safety.DetectorCondition;
 import at.schmoegl.railcore.safety.OperatingState;
 import at.schmoegl.railcore.safety.SensorState;
 import at.schmoegl.railcore.safety.StateMachine;
@@ -44,6 +46,9 @@ public final class PlantState {
     private final Map<Integer, List<Integer>> railCom = new HashMap<>();
     private final Map<Integer, TurnoutPosition> reportedTurnouts = new HashMap<>();
     private final Map<Integer, PlantSnapshot.HandControllerView> handControllers = new TreeMap<>();
+    private final Map<Integer, Diag> diagnostics = new TreeMap<>();
+    private final Map<Integer, DistrictPower> districts = new TreeMap<>();
+    private final Map<String, java.util.EnumSet<TrainCaution>> cautions = new HashMap<>();
     private long version;
 
     PlantState(ThreadGuard guard, Journal journal, Collection<Integer> knownContacts) {
@@ -142,6 +147,23 @@ public final class PlantState {
         if (s == communication) return;
         communication = s;   // Protokollierung erfolgt im CommunicationWatchdog
         version++;
+    }
+
+    /**
+     * Entprellter Melderzustand. Ein gültiger Zustand (frei/belegt) wird mit dem Zeitpunkt seiner Meldung als „letzter
+     * gültiger Zustand“ für die Diagnose festgehalten.
+     */
+    void setSensor(int contact, SensorState s, long reportedNanos) {
+        guard.check("Melder ändern");
+        if (s != SensorState.UNKNOWN) {
+            Diag d = diagnostics.computeIfAbsent(contact, k -> new Diag());
+            if (d.lastValid != s || d.lastValidNanos != reportedNanos) {
+                d.lastValid = s;
+                d.lastValidNanos = reportedNanos;
+                version++;
+            }
+        }
+        setSensor(contact, s);
     }
 
     void setSensor(int contact, SensorState s) {
@@ -253,11 +275,163 @@ public final class PlantState {
         reportedLocos.clear();
         railCom.clear();
         reportedTurnouts.clear();
+        districts.clear();
         capabilities = StationCapabilities.UNKNOWN;
         handControllers.replaceAll((a, v) -> new PlantSnapshot.HandControllerView(a, null, false));
         version++;
         journal.warn("zentrale", "STATION_VIEWS_CLEARED", "Meldungen der Zentrale verworfen (Lokzustände, RailCom, Weichenlagen, "
-                + "Fähigkeiten, Handregler): " + why);
+                + "Bezirke, Fähigkeiten, Handregler): " + why);
+    }
+
+
+    // ------------------------------------------------------------------ Melderdiagnose, Bezirke, Kennzeichnungen
+
+    /** Veränderliche Diagnose je Melder (nur Steuerungs-Thread). */
+    private static final class Diag {
+        DetectorCondition condition = DetectorCondition.NORMAL;
+        SensorState lastValid = SensorState.UNKNOWN;
+        long lastValidNanos = Long.MIN_VALUE;
+        int flickerCount;
+        boolean flickering;
+
+        boolean noteworthy() {
+            return condition != DetectorCondition.NORMAL || lastValid != SensorState.UNKNOWN || flickerCount > 0;
+        }
+
+        PlantSnapshot.SensorDiagnostics view(int contact) {
+            return new PlantSnapshot.SensorDiagnostics(contact, condition, lastValid, lastValidNanos, flickerCount, flickering);
+        }
+    }
+
+    /** Überwachungszustand eines Melders; ohne Eintrag {@link DetectorCondition#NORMAL}. */
+    public DetectorCondition detectorCondition(int contact) {
+        guard.check("Melderüberwachung lesen");
+        Diag d = diagnostics.get(contact);
+        return d == null ? DetectorCondition.NORMAL : d.condition;
+    }
+
+    /** Alle der Steuerung bekannten Melder (Anlage und bisher gemeldete). */
+    public java.util.Set<Integer> knownContacts() {
+        guard.check("Melder lesen");
+        return java.util.Set.copyOf(sensors.keySet());
+    }
+
+    /** Diagnose eines Melders für die Überwachung (nur lesen). */
+    public Optional<PlantSnapshot.SensorDiagnostics> sensorDiagnostics(int contact) {
+        guard.check("Melderdiagnose lesen");
+        Diag d = diagnostics.get(contact);
+        return d == null ? Optional.empty() : Optional.of(d.view(contact));
+    }
+
+    /**
+     * Überwachungszustand eines Melders setzen. Außer {@link DetectorCondition#NORMAL} wird der Melder „unbekannt“;
+     * der letzte gültige Zustand mit Zeitstempel bleibt für die Anzeige erhalten. Protokolliert wird gebündelt von
+     * der Melderüberwachung.
+     */
+    void setDetectorCondition(int contact, DetectorCondition c) {
+        guard.check("Melderüberwachung setzen");
+        Diag d = diagnostics.computeIfAbsent(contact, k -> new Diag());
+        if (d.condition != c) {
+            d.condition = c;
+            version++;
+        }
+        if (c != DetectorCondition.NORMAL) {
+            SensorState before = sensors.put(contact, SensorState.UNKNOWN);
+            if (before != SensorState.UNKNOWN) version++;
+        }
+    }
+
+    /** Flacker-Zähler eines Melders (aus der Entprellung). */
+    void setFlicker(int contact, int count, boolean flickering) {
+        guard.check("Flacker-Zähler setzen");
+        Diag d = diagnostics.computeIfAbsent(contact, k -> new Diag());
+        if (d.flickerCount == count && d.flickering == flickering) return;
+        d.flickerCount = count;
+        d.flickering = flickering;
+        version++;
+    }
+
+    public DistrictPower districtPower(int district) {
+        guard.check("Bezirk lesen");
+        return districts.getOrDefault(district, DistrictPower.UNKNOWN);
+    }
+
+    /** Ist irgendein gemeldeter Bezirk nicht versorgt? */
+    public boolean anyDistrictUnpowered() {
+        guard.check("Bezirke lesen");
+        return districts.values().stream().anyMatch(p -> !p.powered());
+    }
+
+    void setDistrictPower(int district, DistrictPower p) {
+        guard.check("Bezirk setzen");
+        DistrictPower before = districts.put(district, java.util.Objects.requireNonNull(p));
+        if (before == p) return;
+        version++;
+        journal.log(p.fault() ? at.schmoegl.railcore.diag.Severity.CRITICAL : p.powered()
+                        ? at.schmoegl.railcore.diag.Severity.INFO : at.schmoegl.railcore.diag.Severity.WARNING,
+                "bezirk:" + district, "DISTRICT_POWER", "Bezirk " + district + ": "
+                        + (before == null ? DistrictPower.UNKNOWN : before).german() + " → " + p.german());
+    }
+
+    /** Kennzeichnungen eines Zuges (leer = keine). */
+    public java.util.Set<TrainCaution> cautions(String trainId) {
+        guard.check("Kennzeichnung lesen");
+        java.util.Set<TrainCaution> c = cautions.get(trainId);
+        return c == null ? java.util.Set.of() : java.util.Set.copyOf(c);
+    }
+
+    /** Zug mit dieser Lokadresse, falls angemeldet. */
+    public Optional<Train> trainByAddress(int address) {
+        guard.check("Zug lesen");
+        for (Train t : trains.values()) if (t.address() == address) return Optional.of(t);
+        return Optional.empty();
+    }
+
+    public Optional<Train> train(String trainId) {
+        guard.check("Zug lesen");
+        return Optional.ofNullable(trains.get(trainId));
+    }
+
+    /** Sperrt eine Kennzeichnung der Lok {@code address} Anfahren und Beschleunigen? */
+    boolean increaseBlocked(int address) {
+        guard.check("Kennzeichnung lesen");
+        for (Train t : trains.values()) {
+            if (t.address() != address) continue;
+            java.util.Set<TrainCaution> c = cautions.get(t.id());
+            if (c != null && c.stream().anyMatch(TrainCaution::blocksIncrease)) return true;
+        }
+        return false;
+    }
+
+    /** Zug kennzeichnen; er wird zugleich „unbestätigt“. @return true, wenn die Kennzeichnung neu ist */
+    boolean addCaution(String trainId, TrainCaution c, String why) {
+        guard.check("Zug kennzeichnen");
+        Train t = trains.get(trainId);
+        if (t == null) return false;
+        boolean added = cautions.computeIfAbsent(trainId, k -> java.util.EnumSet.noneOf(TrainCaution.class)).add(c);
+        TrainStatus before = trainStatus.put(trainId, TrainStatus.UNCONFIRMED);
+        if (added || before != TrainStatus.UNCONFIRMED) version++;
+        if (added) journal.warn("zug:" + t.displayName(), "TRAIN_CAUTION", "Zug gekennzeichnet: " + c.german() + " – " + why);
+        return added;
+    }
+
+    /** Alle angemeldeten Züge kennzeichnen. @return Zahl neu gekennzeichneter Züge */
+    int addCautionToAll(TrainCaution c, String why) {
+        int n = 0;
+        for (String id : List.copyOf(trains.keySet())) if (addCaution(id, c, why)) n++;
+        return n;
+    }
+
+    /** Kennzeichnungen eines Zuges aufheben (nur Bedienhandlung). */
+    void clearCautions(String trainId, String operator) {
+        guard.check("Kennzeichnung aufheben");
+        java.util.Set<TrainCaution> c = cautions.remove(trainId);
+        if (c == null || c.isEmpty()) return;
+        version++;
+        Train t = trains.get(trainId);
+        journal.warn("zug:" + (t == null ? trainId : t.displayName()), "TRAIN_CAUTION_CLEARED",
+                "Kennzeichnung aufgehoben durch " + operator + ": " + c.stream().map(TrainCaution::german).toList()
+                        + " – Zug bleibt unbestätigt bis zum Abgleich");
     }
 
     /** Status des Befehlsplaners für die Momentaufnahme (nur bei Überlastwechsel und periodischem Bericht). */
@@ -281,9 +455,12 @@ public final class PlantState {
     private PlantSnapshot build(long timeNanos, boolean executorStalled) {
         Map<String, PlantSnapshot.TrainView> views = new HashMap<>();
         for (Train t : trains.values())
-            views.put(t.id(), new PlantSnapshot.TrainView(t.id(), t.displayName(), t.address(), trainStatus.get(t.id())));
+            views.put(t.id(), new PlantSnapshot.TrainView(t.id(), t.displayName(), t.address(), trainStatus.get(t.id()),
+                    cautions.getOrDefault(t.id(), java.util.EnumSet.noneOf(TrainCaution.class))));
+        Map<Integer, PlantSnapshot.SensorDiagnostics> diag = new TreeMap<>();
+        diagnostics.forEach((c, d) -> { if (d.noteworthy()) diag.put(c, d.view(c)); });
         return new PlantSnapshot(version, timeNanos, stateMachine.state(), stateMachine.reason(), emergencyLatched,
                 executorStalled, trackPower, communication, sensors, views, scheduler, capabilities, reportedLocos,
-                railCom, reportedTurnouts, handControllers);
+                railCom, reportedTurnouts, handControllers, diag, districts);
     }
 }

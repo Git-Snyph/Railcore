@@ -2,6 +2,7 @@ package at.schmoegl.railcore.control;
 
 import at.schmoegl.railcore.core.CommandStation;
 import at.schmoegl.railcore.core.CommandStationListener;
+import at.schmoegl.railcore.core.DistrictPower;
 import at.schmoegl.railcore.core.LocoState;
 import at.schmoegl.railcore.core.StationCapabilities;
 import at.schmoegl.railcore.core.TrackPower;
@@ -81,6 +82,8 @@ public final class ControlExecutor {
     private static final long NO_HEARTBEAT = Long.MIN_VALUE;
 
     private final ControlConfig config;
+    private final SupervisionConfig supervisionConfig;
+    private final DetectorSupervision detectors;
     private final TimeSource clock;
     private final Journal journal;
     private final CommandStation station;
@@ -126,22 +129,24 @@ public final class ControlExecutor {
     private volatile TimingStatistics.Summary lastTickJitterReport = TimingStatistics.Summary.EMPTY;
     private volatile TimingStatistics.Summary lastTimerLatenessReport = TimingStatistics.Summary.EMPTY;
 
-    private ControlExecutor(ControlConfig config, SchedulerConfig schedulerConfig, TimeSource clock, Journal journal,
-                            CommandStation station, Collection<Integer> knownContacts, MovementAuthority authority,
-                            BudgetCorrection correction) {
+    private ControlExecutor(ControlConfig config, SchedulerConfig schedulerConfig, SupervisionConfig supervisionConfig,
+                            TimeSource clock, Journal journal, CommandStation station, Collection<Integer> knownContacts,
+                            MovementAuthority authority, BudgetCorrection correction) {
         this.config = Objects.requireNonNull(config);
+        this.supervisionConfig = supervisionConfig;
         this.clock = Objects.requireNonNull(clock);
         this.journal = Objects.requireNonNull(journal);
         this.station = Objects.requireNonNull(station);
         this.guard = new ThreadGuard(journal);
         this.plant = new PlantState(guard, journal, knownContacts);
         this.feedback = new FeedbackFilter(clock, journal, config.feedbackReleaseMillis(), config.flickerWarnThreshold(),
-                this::onFilteredFeedback);
+                this::onFilteredFeedback, (contact, count, warned) -> plant.setFlicker(contact, count, warned));
         this.communication = new CommunicationWatchdog(clock, journal, config.commWarnMillis(), config.commLostMillis());
         CommandRules rules = new CommandRules(plant, Objects.requireNonNull(authority));
         this.scheduler = new CommandScheduler(Objects.requireNonNull(schedulerConfig), guard, clock, journal, station, rules,
                 plant, this, emergencyEpoch::get, correction);
         this.commands = new GatedCommandSink(guard, rules, journal, scheduler);
+        this.detectors = new DetectorSupervision(this, supervisionConfig, feedback);
         this.queue = new LinkedBlockingQueue<>(config.queueCapacity());
         this.watchdog = new ExecutorWatchdog(this, clock, journal, config);
         this.lastTickNanos = clock.nanoTime();
@@ -176,15 +181,31 @@ public final class ControlExecutor {
     public static ControlExecutor create(ControlConfig config, SchedulerConfig schedulerConfig, TimeSource clock,
                                          Journal journal, CommandStation station, Collection<Integer> knownContacts,
                                          MovementAuthority authority) {
-        return create(config, schedulerConfig, clock, journal, station, knownContacts, authority, BudgetCorrection.NONE);
+        return create(config, schedulerConfig, SupervisionConfig.defaults(), clock, journal, station, knownContacts, authority);
+    }
+
+    /** Wie oben, mit eigenen Einstellungen der Überwachungen (Melder, Lokmeldungen). */
+    public static ControlExecutor create(ControlConfig config, SchedulerConfig schedulerConfig, SupervisionConfig supervision,
+                                         TimeSource clock, Journal journal, CommandStation station,
+                                         Collection<Integer> knownContacts, MovementAuthority authority) {
+        return create(config, schedulerConfig, supervision, clock, journal, station, knownContacts, authority,
+                BudgetCorrection.NONE);
     }
 
     /** Paketintern: mit Budget-Nachführung (Erweiterungsstelle, bis zur Bestätigung des Echos nicht genutzt). */
     static ControlExecutor create(ControlConfig config, SchedulerConfig schedulerConfig, TimeSource clock, Journal journal,
                                   CommandStation station, Collection<Integer> knownContacts, MovementAuthority authority,
                                   BudgetCorrection correction) {
-        ControlExecutor ex = new ControlExecutor(config, schedulerConfig, clock, journal, station, knownContacts, authority,
-                Objects.requireNonNull(correction));
+        return create(config, schedulerConfig, SupervisionConfig.defaults(), clock, journal, station, knownContacts,
+                authority, correction);
+    }
+
+    private static ControlExecutor create(ControlConfig config, SchedulerConfig schedulerConfig, SupervisionConfig supervision,
+                                          TimeSource clock, Journal journal, CommandStation station,
+                                          Collection<Integer> knownContacts, MovementAuthority authority,
+                                          BudgetCorrection correction) {
+        ControlExecutor ex = new ControlExecutor(config, schedulerConfig, Objects.requireNonNull(supervision), clock,
+                journal, station, knownContacts, authority, Objects.requireNonNull(correction));
         station.addListener(ex.stationListener);
         journal.info("steuerung", "EXECUTOR_CREATED", "Steuerungs-Executor angelegt (Takt " + config.tickMillis()
                 + " ms, Watchdog-Toleranz " + config.watchdogToleranceMillis() + " ms, " + knownContacts.size() + " Melder unbekannt)");
@@ -552,6 +573,7 @@ public final class ControlExecutor {
             if (hb != NO_HEARTBEAT) communication.alive(hb);
             if (state != OperatingState.OFFLINE) checkCommunication();
             feedback.poll();
+            detectors.onTick(now);
         } catch (RuntimeException e) {
             internalError("Takt", e);
         }
@@ -595,7 +617,7 @@ public final class ControlExecutor {
 
     /** Ausgabe der Rückmelder-Entprellung: Melderzustand setzen, dann Beobachter (Positionsabgleich) informieren. */
     private void onFilteredFeedback(FeedbackFilter.Event e) {
-        plant.setSensor(e.contact(), e.occupied() ? SensorState.OCCUPIED : SensorState.FREE);
+        plant.setSensor(e.contact(), e.occupied() ? SensorState.OCCUPIED : SensorState.FREE, e.timestampNanos());
         for (FeedbackObserver o : List.copyOf(feedbackObservers))
             o.onFeedback(e.contact(), e.occupied(), e.timestampNanos());
     }
@@ -611,10 +633,48 @@ public final class ControlExecutor {
     private void internalError(String where, RuntimeException e) {
         journal.critical("steuerung", "INTERNAL_ERROR", "Interner Fehler in „" + where + "“: " + e);
         emergencyStop("steuerung", "Interner Fehler in „" + where + "“");
+        diagnosticReport("Interner Fehler in „" + where + "“", e);
         try {
             enterFault("steuerung", "Interner Fehler in „" + where + "“");
         } catch (RuntimeException again) {
             journal.critical("steuerung", "INTERNAL_ERROR", "Störung konnte nicht gesetzt werden: " + again);
+        }
+    }
+
+    /** Höchstzahl Stack-Zeilen im Diagnosebericht. */
+    private static final int REPORT_FRAMES = 12;
+
+    /**
+     * Diagnosebericht nach internem Fehler oder Hänger (Lastenheft 7, „Interner Fehler“): Ursache mit Stack, Zustand
+     * laut letzter Momentaufnahme, Warteschlangen und Taktschwankung als ein Journaleintrag ({@code DIAGNOSTIC_REPORT}).
+     * Aus jedem Thread aufrufbar; liest nur Momentaufnahme und thread-sichere Zähler.
+     */
+    void diagnosticReport(String cause, Throwable error) {
+        try {
+            PlantSnapshot s = snapshot;
+            StringBuilder b = new StringBuilder("Diagnosebericht – ").append(cause);
+            b.append("\n  Thread: ").append(Thread.currentThread().getName());
+            if (error != null) {
+                b.append("\n  Ausnahme: ").append(error);
+                StackTraceElement[] st = error.getStackTrace();
+                for (int i = 0; i < Math.min(REPORT_FRAMES, st.length); i++) b.append("\n    bei ").append(st[i]);
+                if (st.length > REPORT_FRAMES) b.append("\n    … ").append(st.length - REPORT_FRAMES).append(" weitere");
+                for (Throwable c = error.getCause(); c != null && c != error; c = c.getCause())
+                    b.append("\n  verursacht durch: ").append(c);
+            }
+            b.append("\n  Zustand (Momentaufnahme v").append(s.version()).append("): ").append(s.operatingState().german())
+                    .append(" (").append(s.stateReason()).append("), Nothalt ").append(s.emergencyLatched() ? "gesetzt" : "nicht gesetzt")
+                    .append(", Verbindung ").append(s.communication()).append(", Gleisspannung ").append(s.trackPower())
+                    .append(", Executor ").append(stalled ? "hängt" : "taktet");
+            b.append("\n  Warteschlange: ").append(queue.size()).append(" Ereignisse, ").append(urgent.size())
+                    .append(" vorrangig; letzter Takt vor ").append((clock.nanoTime() - lastTickNanos) / 1_000_000).append(" ms");
+            b.append("\n  Taktschwankung (letzter Bericht): ").append(lastTickJitterReport.format());
+            long unknown = s.sensors().values().stream().filter(v -> v == SensorState.UNKNOWN).count();
+            b.append("\n  Melder: ").append(s.sensors().size()).append(" (").append(unknown).append(" unbekannt); Züge: ")
+                    .append(s.trains().size());
+            journal.critical("diagnose", "DIAGNOSTIC_REPORT", b.toString());
+        } catch (RuntimeException again) {
+            journal.critical("diagnose", "DIAGNOSTIC_REPORT", "Diagnosebericht – " + cause + " (unvollständig: " + again + ")");
         }
     }
 
@@ -650,6 +710,7 @@ public final class ControlExecutor {
         scheduler.connectionLost();
         enterFault("verbindung", why);
         feedback.reset();
+        detectors.reset();
         plant.allSensorsUnknown(why);
         plant.setTrackPower(TrackPower.UNKNOWN);
         plant.allTrainsUnconfirmed(why);
@@ -691,7 +752,20 @@ public final class ControlExecutor {
             case ControlCommand.AcknowledgeEmergency a -> acknowledge(a.operator());
             case ControlCommand.RequestReady r -> requestReady(r.operator());
             case ControlCommand.RegisterTrain r -> registerTrain(r);
+            case ControlCommand.ReleaseTrainCaution r -> releaseCaution(r);
         }
+    }
+
+    private void releaseCaution(ControlCommand.ReleaseTrainCaution r) {
+        String what = "Kennzeichnung von Zug " + r.trainId() + " aufheben";
+        if (plant.train(r.trainId()).isEmpty()) { reject(what, "Zug nicht angemeldet"); return; }
+        String why = null;
+        if (plant.communication() != CommunicationWatchdog.Status.OK) why = "Verbindung zur Zentrale nicht in Ordnung";
+        else if (plant.cautions(r.trainId()).contains(TrainCaution.POWER_FAULT)
+                && (plant.anyDistrictUnpowered() || plant.trackPower() != TrackPower.ON))
+            why = "Gleisspannung bzw. Bezirk noch nicht wieder versorgt";
+        if (why != null) { reject(what, why); return; }
+        plant.clearCautions(r.trainId(), r.operator());
     }
 
     private void acknowledge(String operator) {
@@ -768,6 +842,7 @@ public final class ControlExecutor {
             plant.transition(OperatingState.OFFLINE, "Verbindungsaufbau abgebrochen: " + info);
             scheduler.connectionLost();
             feedback.reset();
+            detectors.reset();
             plant.allSensorsUnknown("Verbindung getrennt");
             plant.setTrackPower(TrackPower.UNKNOWN);
             plant.clearStationViews("Verbindung getrennt");
@@ -781,21 +856,83 @@ public final class ControlExecutor {
         OperatingState s = plant.operatingState();
         boolean operating = s.manualMayMove() || s == OperatingState.RECOVERY;
         if (p == TrackPower.SHORT_CIRCUIT) {
+            powerFault("Zentrale meldet Kurzschluss");
             enterFault("zentrale", "Zentrale meldet Kurzschluss");
         } else if (p == TrackPower.EMERGENCY_STOP && operating) {
             applyEmergency("zentrale", "Zentrale meldet Nothalt", true, false);
         }
+        // Der 10808 wird aus der Gleisspannung versorgt (Lastenheft 7); beim Nothalt der Z21 bleibt sie an.
+        switch (p) {
+            case OFF, SHORT_CIRCUIT, PROGRAMMING -> detectors.supplyLost(plant.knownContacts(), "Gleisspannung " + p);
+            case ON -> detectors.supplyRestored(plant.knownContacts(), "Gleisspannung ein");
+            case EMERGENCY_STOP, UNKNOWN -> { }
+        }
+    }
+
+    /**
+     * Booster-Bezirk meldet Kurzschluss, Überlast oder Ausfall (Lastenheft 7): Bezirk ist spannungslos (Hardware),
+     * Melder dort ohne Versorgung, Züge im Bezirk unsicher, Automatik hält geordnet. Ohne Gleisgraph ist weder die
+     * Zuordnung Melder → Bezirk noch Zug → Bezirk bekannt; vorläufig gelten deshalb <b>alle</b> Melder und Züge als
+     * betroffen (sicherste Variante, Schritt B aus Entscheidung 35 bringt die Zuordnung).
+     */
+    private void onPowerDistrict(int district, DistrictPower p) {
+        if (plant.operatingState() == OperatingState.OFFLINE) return;
+        plant.setDistrictPower(district, p);
+        if (p.powered()) {
+            if (!plant.anyDistrictUnpowered())
+                detectors.supplyRestored(plant.knownContacts(), "Bezirk " + district + " wieder eingeschaltet");
+            journal.info("bezirk:" + district, "DISTRICT_RESTORED", "Bezirk " + district + " wieder versorgt – "
+                    + "gekennzeichnete Züge bleiben gekennzeichnet bis zur Freigabe durch den Bediener");
+            return;
+        }
+        String why = "Bezirk " + district + ": " + p.german();
+        detectors.supplyLost(plant.knownContacts(), why + " (Zuordnung Melder → Bezirk ohne Gleisplan unbekannt: alle Melder)");
+        powerFault(why);
+    }
+
+    /** Züge kennzeichnen und Automatik geordnet halten (Kurzschluss, Überlast, Spannungsausfall). */
+    private void powerFault(String why) {
+        int n = plant.addCautionToAll(TrainCaution.POWER_FAULT, why + " (Zuordnung Zug → Bezirk ohne Gleisplan unbekannt: alle Züge)");
+        journal.critical("sicherheit", "POWER_FAULT", why + " – " + n + " Züge als unsicher gekennzeichnet, nur Bremsen und Halten erlaubt");
+        if (plant.operatingState() == OperatingState.RUNNING)
+            plant.transition(OperatingState.STOPPING, "Automatik hält geordnet: " + why);
     }
 
     private void onFeedback(int contact, boolean occupied, long ts) {
-        feedback.raw(contact, occupied, Math.min(ts, clock.nanoTime()));
+        long t = Math.min(ts, clock.nanoTime());
+        if (!detectors.accept(contact, occupied, t)) return;
+        feedback.raw(contact, occupied, t);
     }
 
     /** Lokmeldung der Zentrale: ihr Speicher (eigenes Echo, Abfrage), keine Messung am Fahrzeug. */
     private void onLocoState(LocoState s) {
         if (plant.operatingState() == OperatingState.OFFLINE) return;   // ohne Verbindung nicht aktuell
         plant.setReportedLoco(s);
+        checkDivergence(s);
         for (LocoStateObserver o : List.copyOf(locoObservers)) o.onLocoState(s);
+    }
+
+    /**
+     * Nachkorrektur (Lastenheft 7, Handregler-Abschnitt): meldet die Zentrale für eine echte Adresse eine andere
+     * Fahrstufe oder Richtung als die zuletzt gesendete (Fremdsteuerung, verlorener Befehl), wird der erlaubte Wert
+     * erneut gesendet – über Schranke und Befehlsplaner, Klasse Sicherheit; ist Fahren inzwischen gesperrt, Halt. Der
+     * Zug wird mit größerem Sicherheitsabstand gekennzeichnet und gilt als unbestätigt. Stellvertreter-Adressen
+     * (9000–9999) sind Handregler und werden hier nicht geprüft.
+     */
+    private void checkDivergence(LocoState s) {
+        int a = s.address();
+        if (a >= HandControllerConfig.PROXY_MIN && a <= HandControllerConfig.PROXY_MAX) return;
+        var sent = scheduler.divergence(s, supervisionConfig.locoEchoGraceNanos()).orElse(null);
+        if (sent == null) return;
+        String train = plant.trainByAddress(a).map(t -> " (Zug " + t.displayName() + ")").orElse("");
+        journal.warn("sicherheit", "LOCO_DIVERGED", "Lok " + a + train + ": Zentrale meldet Stufe " + s.speedStep() + " "
+                + s.direction() + ", gesendet war Stufe " + sent.step() + " " + sent.direction()
+                + " – erlaubter Wert wird erneut gesendet (Fremdsteuerung oder verlorener Befehl)");
+        scheduler.markDriveUnconfirmed(a);
+        if (!commands.drive(a, sent.step(), sent.steps(), sent.direction(), CommandPriority.SAFETY))
+            commands.drive(a, 0, sent.steps(), sent.direction(), CommandPriority.SAFETY);   // Halten ist immer erlaubt
+        plant.trainByAddress(a).ifPresent(t -> plant.addCaution(t.id(), TrainCaution.FOREIGN_CONTROL,
+                "Zentrale meldete Stufe " + s.speedStep() + " " + s.direction() + " statt " + sent.step() + " " + sent.direction()));
     }
 
     private void onRailCom(int contact, List<Integer> addresses) {
@@ -825,6 +962,9 @@ public final class ControlExecutor {
         }
         @Override public void onTrackPower(TrackPower state) {
             enqueue("Gleisspannung", () -> ControlExecutor.this.onTrackPower(state));
+        }
+        @Override public void onPowerDistrict(int district, DistrictPower state, long timestampNanos) {
+            enqueue("Bezirk", () -> ControlExecutor.this.onPowerDistrict(district, state));
         }
         @Override public void onFeedback(int contact, boolean occupied, long timestampNanos) {
             enqueue("Rückmelder", () -> ControlExecutor.this.onFeedback(contact, occupied, timestampNanos));
