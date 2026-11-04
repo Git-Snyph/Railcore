@@ -33,7 +33,7 @@ Wenn eine Aufgabe einem dieser Grundsätze widerspricht: nicht umsetzen, sondern
 - **Hardware nur über `CommandStation`.** Zentralen-spezifischer Code bleibt im jeweiligen Adapter (`z21`, später weitere). Fähigkeiten (Firmware, F29–F31, CAN, Lok-Broadcast) nie voraussetzen, sondern erkennen.
 - **Fahrbefehl = Fahrstufe + Richtung in einem Aufruf** (wie DCC); keine getrennten Setter.
 - **Software Motion Control ist Standard** (CV3/CV4 = 0, Trägheit aus der Steuerung); Decoder Motion Control nur als Ausnahme je Lok (Entscheidung 8).
-- **Stellvertreter-Adressen 9000–9999** sind für den Handbetrieb reserviert; echte Decoder in diesem Bereich sind ein Prüffehler (Entscheidung 7).
+- **Stellvertreter-Adressen 9000–9999** sind für den Handbetrieb reserviert; echte Decoder in diesem Bereich sind ein Prüffehler (Entscheidung 7). Sie gelten für Handregler an der Z21 (Z21-App, X-Bus, Zimo KLUG); die WLAN-Maus verbindet sich direkt mit RailCore über einen Z21-kompatiblen LAN-Server, ihre Befehle gehen nur nach Prüfung an die Zentrale (Entscheidung 21).
 - **Datenhaltung:** SQLite ist maßgeblich, JSON nur Austausch/Sicherung.
 - Keine fest einprogrammierten Kapazitätsgrenzen; Grenzen sind konfigurierbar und getestet.
 
