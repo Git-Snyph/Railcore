@@ -1,6 +1,6 @@
 # 8. Hardware-Abstraktion und Z21-Adapter
 
-> Quelle: Dokument „RailCore – Technisches Lastenheft“ in claude.ai (https://claude.ai/artifact/EZJSUZJ3T2DzCGpGTZfaDM), Stand 03.11.2026. Maßgeblich ist das Dokument in claude.ai; Änderungen dort planen und hier nachziehen.
+> Maßgebliche Fassung des Lastenhefts. Lesbare Fassung mit Diagrammen: Dokument „RailCore – Technisches Lastenheft“ in claude.ai (https://claude.ai/artifact/EZJSUZJ3T2DzCGpGTZfaDM), wird nach jeder Änderung hier nachgezogen.
 
 Jede Zentrale ist ein Adapter hinter derselben Schnittstelle und meldet ihre **Fähigkeiten**; die Automatik nutzt nur, was vorhanden ist.
 

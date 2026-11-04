@@ -1,6 +1,6 @@
 # 6. Positionsberechnung und Einmessen
 
-> Quelle: Dokument „RailCore – Technisches Lastenheft“ in claude.ai (https://claude.ai/artifact/EZJSUZJ3T2DzCGpGTZfaDM), Stand 03.11.2026. Maßgeblich ist das Dokument in claude.ai; Änderungen dort planen und hier nachziehen.
+> Maßgebliche Fassung des Lastenhefts. Lesbare Fassung mit Diagrammen: Dokument „RailCore – Technisches Lastenheft“ in claude.ai (https://claude.ai/artifact/EZJSUZJ3T2DzCGpGTZfaDM), wird nach jeder Änderung hier nachgezogen.
 
 Jede Zugposition ist ein Punkt im Gleisgraph (Kante + mm) für die Zugspitze, dazu Richtung und Länge; daraus folgen alle belegten Abschnitte. Gerechnet wird 20× pro Sekunde aus Fahrstufe, Profil und Zeit.
 

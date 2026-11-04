@@ -1,6 +1,6 @@
 # 9. Datenmodell und Persistenz
 
-> Quelle: Dokument „RailCore – Technisches Lastenheft“ in claude.ai (https://claude.ai/artifact/EZJSUZJ3T2DzCGpGTZfaDM), Stand 03.11.2026. Maßgeblich ist das Dokument in claude.ai; Änderungen dort planen und hier nachziehen.
+> Maßgebliche Fassung des Lastenhefts. Lesbare Fassung mit Diagrammen: Dokument „RailCore – Technisches Lastenheft“ in claude.ai (https://claude.ai/artifact/EZJSUZJ3T2DzCGpGTZfaDM), wird nach jeder Änderung hier nachgezogen.
 
 Eine SQLite-Datei je Anlage ist die maßgebliche Datenhaltung, mit vier klar getrennten Bereichen. Stammdaten und Konfiguration ändert der Bediener, Betriebszustand schreibt nur der Kern, Historie wird nur angehängt.
 
