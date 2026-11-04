@@ -7,22 +7,28 @@ import at.schmoegl.railcore.core.TurnoutPosition;
 /** Dekodierte Nachrichten von der Z21. */
 public sealed interface Z21Message {
 
+    /**
+     * Meldungen, die nur der Fähigkeitserkennung und dem Prüfprogramm dienen und den Betriebszustand nicht ändern.
+     * Der Betriebstreiber behandelt sie gesammelt mit einem einzigen Fall.
+     */
+    sealed interface Diagnostic extends Z21Message {}
+
     record SerialNumber(long serial) implements Z21Message {}
 
     /** Antwort auf LAN_X_GET_VERSION: X-Bus-Version (0x30 = 3.0) und Zentralen-Kennung (0x12 = Z21). */
     record FirmwareVersion(int xBusVersion, int commandStationId) implements Z21Message {}
 
     /** Antwort auf LAN_X_GET_FIRMWARE_VERSION, BCD-kodiert (0x0142 = 1.42). */
-    record XFirmware(int bcdVersion) implements Z21Message {}
+    record XFirmware(int bcdVersion) implements Diagnostic {}
 
     /** Antwort auf LAN_GET_HWINFO: Hardware-Typ und BCD-kodierte Firmware-Version. */
-    record HwInfo(long hardwareType, long bcdFirmware) implements Z21Message {}
+    record HwInfo(long hardwareType, long bcdFirmware) implements Diagnostic {}
 
     /** Antwort auf LAN_GET_CODE: 0 = keine Sperre, 1 = z21 start gesperrt, 2 = z21 start freigeschaltet. */
-    record Code(int code) implements Z21Message {}
+    record Code(int code) implements Diagnostic {}
 
     /** Antwort auf LAN_GET_BROADCASTFLAGS. */
-    record BroadcastFlags(long flags) implements Z21Message {}
+    record BroadcastFlags(long flags) implements Diagnostic {}
 
     /**
      * LAN_SYSTEMSTATE_DATACHANGED. Ströme in mA, Temperatur in °C, Spannungen in mV.
@@ -30,14 +36,14 @@ public sealed interface Z21Message {
      */
     record SystemState(int mainCurrentMa, int progCurrentMa, int filteredMainCurrentMa, int temperatureC,
                        int supplyVoltageMv, int vccVoltageMv, int centralState, int centralStateEx, int capabilities)
-            implements Z21Message {}
+            implements Diagnostic {}
 
     /** LAN_RAILCOM_DATACHANGED: RailCom-Daten einer Lok (Zähler, Optionen, Geschwindigkeit, Empfangsgüte). */
     record RailComData(int locoAddress, long receiveCounter, int errorCounter, int options, int speed, int qos)
-            implements Z21Message {}
+            implements Diagnostic {}
 
     /** LAN_X_UNKNOWN_COMMAND: die Zentrale kennt den Befehl nicht. */
-    record UnknownCommand() implements Z21Message {}
+    record UnknownCommand() implements Diagnostic {}
 
     record PowerState(TrackPower state) implements Z21Message {}
 

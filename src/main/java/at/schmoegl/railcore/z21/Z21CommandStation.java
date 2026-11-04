@@ -181,6 +181,7 @@ public class Z21CommandStation extends AbstractCommandStation {
 
     private void handle(Z21Message m, long now) {
         switch (m) {
+            case Z21Message.Diagnostic _ -> { } // nur für das Prüfprogramm bzw. die Fähigkeitserkennung
             case Z21Message.PowerState p -> fire(l -> l.onTrackPower(p.state()));
             case Z21Message.Loco lo -> fire(l -> l.onLocoState(lo.state()));
             case Z21Message.Turnout t -> fire(l -> l.onTurnoutPosition(t.address(), t.position()));
@@ -191,13 +192,6 @@ public class Z21CommandStation extends AbstractCommandStation {
             case Z21Message.CvFailed cf -> fire(l -> l.onCvFailed(cf.reason()));
             case Z21Message.SerialNumber s -> { }
             case Z21Message.FirmwareVersion v -> { }
-            case Z21Message.XFirmware v -> { }
-            case Z21Message.HwInfo h -> { }
-            case Z21Message.Code c -> { }
-            case Z21Message.BroadcastFlags b -> { }
-            case Z21Message.SystemState st -> { }
-            case Z21Message.RailComData rd -> { }
-            case Z21Message.UnknownCommand uc -> { }
             case Z21Message.Unknown u -> { }
         }
     }
