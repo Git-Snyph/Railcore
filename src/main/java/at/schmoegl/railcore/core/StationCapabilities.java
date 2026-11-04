@@ -25,7 +25,12 @@ public record StationCapabilities(String firmware, Set<Feature> features) {
         /** Lokmeldungen auch bei Fahrbefehlen anderer Clients (an der Z21 1.43 nicht gegeben). */
         LOCO_BROADCAST("Lok-Broadcast bei Fremdsteuerung"),
         /** Zubehör meldet die tatsächliche Endlage (nicht nur den Speicher der Zentrale). */
-        ACCESSORY_END_POSITION("Endlagenmeldung Zubehör");
+        ACCESSORY_END_POSITION("Endlagenmeldung Zubehör"),
+        /**
+         * Abfrage aller Melderzustände, die auch unveränderte Zustände meldet ({@link CommandStation#requestDetectorStatus}):
+         * Grundlage für die Erkennung stummer Melder und für das erneute Einlesen nach einem Versorgungsausfall.
+         */
+        DETECTOR_STATUS_QUERY("Melderabfrage");
 
         private final String german;
 

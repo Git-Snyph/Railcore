@@ -36,6 +36,15 @@ public interface CommandStation extends AutoCloseable {
     /** Weiche/Signal schalten (DCC-Zubehöradresse ab 1). */
     void setTurnout(int address, TurnoutPosition position);
 
+    /**
+     * Fordert den aktuellen Zustand aller Belegtmelder an; die Antworten kommen über
+     * {@link CommandStationListener#onFeedback} – auch dann, wenn sich der Zustand nicht geändert hat. Nur aufrufen,
+     * wenn die Zentrale {@link StationCapabilities.Feature#DETECTOR_STATUS_QUERY} erkennbar meldet.
+     */
+    default void requestDetectorStatus() {
+        throw new UnsupportedOperationException(name() + ": Melderabfrage nicht unterstützt");
+    }
+
     // ---------------------------------------------------------------- Decoder-Programmierung
     // Ergebnisse kommen asynchron über CommandStationListener#onCvResult / #onCvFailed.
 

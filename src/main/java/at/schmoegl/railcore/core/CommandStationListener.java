@@ -10,6 +10,14 @@ public interface CommandStationListener {
 
     default void onTrackPower(TrackPower state) {}
 
+    /**
+     * Zustand eines Booster-Bezirks hat sich geändert (Kurzschluss, Überlast, aus, ein), gemeldet von Zentrale, Booster
+     * oder Belegtmelder. Ein Adapter meldet das nur, wenn er es an der Zentrale tatsächlich erkennt.
+     *
+     * @param district Nummer des Bezirks (Zuordnung laut Gleisplan)
+     */
+    default void onPowerDistrict(int district, DistrictPower state, long timestampNanos) {}
+
     default void onLocoState(LocoState state) {}
 
     default void onTurnoutPosition(int address, TurnoutPosition position) {}
