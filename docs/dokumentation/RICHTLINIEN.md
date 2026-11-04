@@ -15,6 +15,8 @@ Lastenheft (`docs/lastenheft/`) und Entscheidungsprotokoll bleiben die Vorgaben;
 
 ## Stand kennzeichnen
 
+Bis Meilenstein 5 werden Anleitung und Wiki nur als Gerüst (Kapitelstruktur, Statuszeilen) und Glossar gepflegt; ausformuliert wird ein Kapitel erst, wenn die beschriebene Funktion fertig und getestet ist (Entscheidung 39).
+
 Jede Seite beginnt nach der Überschrift mit einer Statuszeile:
 
 - `> Status: geplant (Meilenstein N)` – Funktion noch nicht gebaut; die Seite enthält nur die Gliederung.

@@ -8,4 +8,4 @@
 - Wiederanlauf: unbestätigte Züge bestätigen
 - Meldungen der Steuerung und was zu tun ist (Position unsicher, Überlast der Befehlsausgabe, Melder unbekannt)
 - Journal lesen
-- Hardware-Watchdog
+- Interner Watchdog
