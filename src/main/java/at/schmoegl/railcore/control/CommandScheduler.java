@@ -130,7 +130,11 @@ public final class CommandScheduler implements CommandSink {
     private long demandWindowStart;
     private long demandCount;
     private double demandRate;
-    private final long[] exceededWait = new long[CommandPriority.values().length];
+    /** Bedarf der Sicherheitsklasse je abgeschlossener Sekunde (gleitendes Mittel über demandWindowSeconds). */
+    private final java.util.ArrayDeque<Double> demandPerSecond = new java.util.ArrayDeque<>();
+    /** Wartezeiten je Klasse im laufenden Sekundenfenster (für den Überlast-Befund). */
+    private final TimingStatistics[] evalWait = new TimingStatistics[CommandPriority.values().length];
+    private final double[] lastWaitP95Ms = new double[CommandPriority.values().length];
 
     private final Counters total = new Counters();
     private final Counters window = new Counters();
@@ -174,6 +178,7 @@ public final class CommandScheduler implements CommandSink {
         this.tokens = config.burstCommands();
         this.lastRefillNanos = now;
         this.demandWindowStart = now;
+        for (int k = 0; k < evalWait.length; k++) evalWait[k] = new TimingStatistics();
         this.windowStartNanos = now;
         this.seenEpoch = emergencyEpoch.getAsLong();
         journal.info("befehle", "SCHEDULER_CREATED", "Befehlsplaner: " + config.describe() + String.format(Locale.ROOT,
@@ -479,7 +484,7 @@ public final class CommandScheduler implements CommandSink {
         total.wait.get(p.priority).record(waited);
         window.wait.get(p.priority).record(waited);
         int k = p.priority.ordinal();
-        exceededWait[k] = Math.max(exceededWait[k], overloadRelevantWait(p.priority, p.firstNanos, now));
+        evalWait[k].record(overloadRelevantWait(p.priority, p.firstNanos, now));
         Slot s = p.slot;
         switch (p.value) {
             case DriveValue d -> sendDrive(p, d, now);
@@ -582,23 +587,35 @@ public final class CommandScheduler implements CommandSink {
         int backlog = queue.size() - comfort;
         if (backlog > config.overloadBacklog())
             reasons.add("Rückstau " + backlog + " Befehle (Grenze " + config.overloadBacklog() + ")");
-        for (CommandPriority c : CommandPriority.QUEUED) {
-            int k = c.ordinal();
-            long pendingWait = oldest[k] == Long.MAX_VALUE ? 0 : overloadRelevantWait(c, oldest[k], now);
-            if (overloaded && c == CommandPriority.COMFORT) pendingWait = 0;   // gerade zurückgestellt
-            long w = Math.max(exceededWait[k], pendingWait);
-            if (w > config.waitLimitNanos(c))
-                reasons.add(String.format(Locale.ROOT, "Wartezeit %s %.0f ms (Grenze %d ms)", c.german(), w / 1e6,
-                        config.waitLimitNanos(c) / 1_000_000));
-            exceededWait[k] = 0;
-        }
-        if (now - demandWindowStart >= SECOND) {
-            demandRate = demandCount * (double) SECOND / (now - demandWindowStart);
+        if (now - demandWindowStart >= SECOND) {      // Sekundenfenster: Bedarf und p95 der Wartezeit je Klasse
+            demandPerSecond.addLast(demandCount * (double) SECOND / (now - demandWindowStart));
+            while (demandPerSecond.size() > config.demandWindowSeconds()) demandPerSecond.removeFirst();
+            demandRate = demandPerSecond.stream().mapToDouble(Double::doubleValue).average().orElse(0);
             demandCount = 0;
             demandWindowStart = now;
+            for (CommandPriority c : CommandPriority.QUEUED) {
+                int k = c.ordinal();
+                lastWaitP95Ms[k] = evalWait[k].count() > 0 ? evalWait[k].summary().p95Ms() : 0;
+                evalWait[k].reset();
+            }
+        }
+        // Einzelne Spitzen (alle Züge rechnen im selben Takt) sind keine Überlast: maßgeblich ist das p95 der
+        // letzten Sekunde; ein noch Wartender erst ab der doppelten Grenze.
+        for (CommandPriority c : CommandPriority.QUEUED) {
+            int k = c.ordinal();
+            long limit = config.waitLimitNanos(c);
+            long pendingWait = oldest[k] == Long.MAX_VALUE ? 0 : overloadRelevantWait(c, oldest[k], now);
+            if (overloaded && c == CommandPriority.COMFORT) pendingWait = 0;   // gerade zurückgestellt
+            if (lastWaitP95Ms[k] * 1e6 > limit)
+                reasons.add(String.format(Locale.ROOT, "Wartezeit %s p95 %.0f ms (Grenze %d ms)", c.german(),
+                        lastWaitP95Ms[k], limit / 1_000_000));
+            else if (pendingWait > 2 * limit)
+                reasons.add(String.format(Locale.ROOT, "Wartezeit %s %.0f ms wartend (Grenze %d ms)", c.german(),
+                        pendingWait / 1e6, limit / 1_000_000));
         }
         if (demandRate > budget + EPS)
-            reasons.add(String.format(Locale.ROOT, "Bedarf Sicherheit/Bremskurven %.1f/s über Budget %.1f/s", demandRate, budget));
+            reasons.add(String.format(Locale.ROOT, "Bedarf Sicherheit/Bremskurven %.1f/s (Mittel %d s) über Budget %.1f/s", demandRate,
+                    config.demandWindowSeconds(), budget));
 
         if (!reasons.isEmpty()) {
             lastOverloadSeenNanos = now;
