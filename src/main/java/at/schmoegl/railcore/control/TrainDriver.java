@@ -63,13 +63,23 @@ public final class TrainDriver {
     private final CommandSink.DriveListener listener = new CommandSink.DriveListener() {
         @Override public void sent(int speedStep, Direction direction, long sentNanos) {
             est.command(sentNanos, profile.speed(dir, speedStep), commandDelayNanos);
+            sentStep = speedStep;
             if (speedStep == 0) stopCommandNanos = sentNanos;
         }
 
         @Override public void dropped(String reason) { onDropped(reason); }
+
+        @Override public void escalated() {
+            if (escalations++ == 0)
+                journal.warn("fahrt", "BRAKE_STEP_ESCALATED", "Bremsstufe " + order.trainId() + " wartete länger als "
+                        + ex.scheduler().config().escalateAfterMillis() + " ms – zur Sicherheit aufgestuft (weitere gezählt)");
+        }
     };
 
     private State state = State.DRIVING;
+    /** Zuletzt tatsächlich gesendete Stufe (wirksam); am Start die Stufe, mit der der Zug bereits fährt. */
+    private int sentStep;
+    private CommandPriority lastPriority = CommandPriority.AUTOMATIC;
     private int lastStep;
     private boolean unplanned;
     private String haltReason;
@@ -80,6 +90,7 @@ public final class TrainDriver {
     private double lastDeviationMm = Double.NaN;
     private int fixCount;
     private int interventions;
+    private int escalations;
     private ScheduledAction phaseAction;
 
     private TrainDriver(ControlExecutor ex, DriveOrder order, StopPlanner.Settings settings) {
@@ -98,6 +109,7 @@ public final class TrainDriver {
         for (int i = 0; i < pointDone.length; i++)
             pointDone[i] = order.points().get(i).positionMm() <= order.startPositionMm();
         this.lastStep = profile.stepFor(dir, order.lineSpeedMmS());
+        this.sentStep = lastStep;
         long now = ex.clock().nanoTime();
         this.est = new PositionEstimator(now, order.startPositionMm(), profile.speed(dir, lastStep), order.startSigmaMm(),
                 plan.runoutTauSeconds());
@@ -149,6 +161,9 @@ public final class TrainDriver {
 
     /** Eingriffe der Überwachung des Freigabeendes (als Sicherheit gesendete Absenkungen und Halte). */
     public int supervisionInterventions() { return interventions; }
+
+    /** Wegen langer Wartezeit zur Sicherheit aufgestufte Bremsstufen dieser Fahrt (Entscheidung 30). */
+    public int brakeStepEscalations() { return escalations; }
 
     /** Fester Versatz dieses Zuges im Takt (ns). */
     public long phaseNanos() { return phaseNanos; }
@@ -222,17 +237,24 @@ public final class TrainDriver {
         double va = plan.approachSpeedMmS();
         int planStep = profile.stepFor(dir, planned(sPlan, sigma));
         if (plan.platform() && planStep < plan.approachStep()) planStep = plan.approachStep();
-        int step = Math.min(planStep, profile.stepFor(dir, vSup));
-        if (plan.platform() && step < plan.approachStep() && vSup >= va) step = plan.approachStep();
-        step = Math.min(step, lastStep);   // nie wieder beschleunigen
-        boolean intervention = step < Math.min(planStep, lastStep);   // die Überwachung verlangt weniger als der Plan
+        int supStep = profile.stepFor(dir, vSup);
+        if (plan.platform() && supStep < plan.approachStep() && vSup >= va) supStep = plan.approachStep();
+        int step = Math.min(Math.min(planStep, supStep), lastStep);   // nie wieder beschleunigen
+        // Eingriff der Überwachung: sie verlangt weniger als die tatsächlich gesendete (wirksame) Stufe. Der Vergleich
+        // mit dem Plan genügt nicht – eine geplante Bremsstufe kann im Befehlsplaner warten, während die Lok schnell fährt.
+        boolean intervention = supStep < sentStep;
 
         if (step == 0) {
-            if (intervention) { interventions++; haltNow(now, "Überwachung des Freigabeendes", true); }
+            if (plan.platform() || (supStep == 0 && planStep > 0)) {
+                interventions++;
+                haltNow(now, "Überwachung des Freigabeendes", true);
+            }
             else haltNow(now, "Halt vor " + plan.stop().id(), false);
             return;
         }
-        if (step != lastStep && !send(now, step, intervention)) return;
+        // ein Eingriff stuft auch einen gleichen, noch wartenden Automatik-Wert zur Sicherheit auf
+        boolean upgrade = intervention && lastPriority != CommandPriority.SAFETY;
+        if ((step != lastStep || upgrade) && !send(now, step, intervention)) return;
 
         if (plan.platform() && lastStep == plan.approachStep() && est.settled()
                 && Math.abs(est.speedMmS() - va) < 1e-9) {
@@ -336,7 +358,7 @@ public final class TrainDriver {
      * der Überwachung als Sicherheit (Entscheidung 28); ein Sicherheitsbefehl ersetzt eine wartende Bremsstufe.
      */
     private boolean send(long now, int step, boolean intervention) {
-        if (intervention) {
+        if (intervention && (step != lastStep || lastPriority != CommandPriority.SAFETY)) {
             if (interventions++ == 0)
                 journal.warn("fahrt", "SUPERVISION_INTERVENTION", "Überwachung des Freigabeendes greift bei " + order.trainId()
                         + ": Stufe " + step + " statt " + lastStep + " (Position " + fmt(est.positionMm()) + " mm; weitere Eingriffe gezählt)");
@@ -348,6 +370,7 @@ public final class TrainDriver {
             return false;
         }
         lastStep = step;
+        lastPriority = p;
         return true;
     }
 

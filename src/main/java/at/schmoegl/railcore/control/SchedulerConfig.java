@@ -45,11 +45,11 @@ public record SchedulerConfig(double packetMillis, double reserveFraction, int r
                               int safetyWaitLimitMillis, int automaticWaitLimitMillis, int timetableWaitLimitMillis,
                               int manualWaitLimitMillis, int comfortWaitLimitMillis,
                               int overloadClearSeconds, int overloadReportSeconds, int metricsReportSeconds,
-                              int demandWindowSeconds) {
+                              int demandWindowSeconds, int escalateAfterMillis) {
 
     public static SchedulerConfig defaults() {
         return new SchedulerConfig(6.0, 0.10, 1, 1.0, 5.0, 4.0, 2.0, 2, 60, 25,
-                50, 150, 300, 500, 5_000, 2, 10, 60, 3);
+                50, 150, 300, 500, 5_000, 2, 10, 60, 3, 150);
     }
 
     public SchedulerConfig {
@@ -74,6 +74,7 @@ public record SchedulerConfig(double packetMillis, double reserveFraction, int r
         require(overloadReportSeconds >= 1 && overloadReportSeconds <= 3_600, "Überlast-Bericht 1–3600 s: " + overloadReportSeconds);
         require(metricsReportSeconds >= 1 && metricsReportSeconds <= 3_600, "Messwert-Bericht 1–3600 s: " + metricsReportSeconds);
         require(demandWindowSeconds >= 1 && demandWindowSeconds <= 60, "Mittelungsfenster Bremsbedarf 1–60 s: " + demandWindowSeconds);
+        require(escalateAfterMillis >= 1 && escalateAfterMillis <= 60_000, "Aufstufung nach 1–60000 ms Wartezeit: " + escalateAfterMillis);
     }
 
     /** Gleiskapazität in Paketen je Sekunde. */
@@ -101,28 +102,28 @@ public record SchedulerConfig(double packetMillis, double reserveFraction, int r
         return new SchedulerConfig(v, reserveFraction, repeatsPerCommand, refreshPacketsPerLocoPerSecond, minCommandsPerSecond,
                 burstCommands, haltBorrowCommands, turnoutCost, activeHoldSeconds, overloadBacklog, safetyWaitLimitMillis,
                 automaticWaitLimitMillis, timetableWaitLimitMillis, manualWaitLimitMillis, comfortWaitLimitMillis,
-                overloadClearSeconds, overloadReportSeconds, metricsReportSeconds, demandWindowSeconds);
+                overloadClearSeconds, overloadReportSeconds, metricsReportSeconds, demandWindowSeconds, escalateAfterMillis);
     }
 
     public SchedulerConfig withBurst(double burst, double haltBorrow) {
         return new SchedulerConfig(packetMillis, reserveFraction, repeatsPerCommand, refreshPacketsPerLocoPerSecond, minCommandsPerSecond,
                 burst, haltBorrow, turnoutCost, activeHoldSeconds, overloadBacklog, safetyWaitLimitMillis,
                 automaticWaitLimitMillis, timetableWaitLimitMillis, manualWaitLimitMillis, comfortWaitLimitMillis,
-                overloadClearSeconds, overloadReportSeconds, metricsReportSeconds, demandWindowSeconds);
+                overloadClearSeconds, overloadReportSeconds, metricsReportSeconds, demandWindowSeconds, escalateAfterMillis);
     }
 
     public SchedulerConfig withOverloadBacklog(int v) {
         return new SchedulerConfig(packetMillis, reserveFraction, repeatsPerCommand, refreshPacketsPerLocoPerSecond, minCommandsPerSecond,
                 burstCommands, haltBorrowCommands, turnoutCost, activeHoldSeconds, v, safetyWaitLimitMillis,
                 automaticWaitLimitMillis, timetableWaitLimitMillis, manualWaitLimitMillis, comfortWaitLimitMillis,
-                overloadClearSeconds, overloadReportSeconds, metricsReportSeconds, demandWindowSeconds);
+                overloadClearSeconds, overloadReportSeconds, metricsReportSeconds, demandWindowSeconds, escalateAfterMillis);
     }
 
     public SchedulerConfig withMetricsReportSeconds(int v) {
         return new SchedulerConfig(packetMillis, reserveFraction, repeatsPerCommand, refreshPacketsPerLocoPerSecond, minCommandsPerSecond,
                 burstCommands, haltBorrowCommands, turnoutCost, activeHoldSeconds, overloadBacklog, safetyWaitLimitMillis,
                 automaticWaitLimitMillis, timetableWaitLimitMillis, manualWaitLimitMillis, comfortWaitLimitMillis,
-                overloadClearSeconds, overloadReportSeconds, v, demandWindowSeconds);
+                overloadClearSeconds, overloadReportSeconds, v, demandWindowSeconds, escalateAfterMillis);
     }
 
     /** Kurzbeschreibung des Modells für das Journal. */
@@ -134,6 +135,16 @@ public record SchedulerConfig(double packetMillis, double reserveFraction, int r
     }
 
     long activeHoldNanos() { return activeHoldSeconds * 1_000_000_000L; }
+
+    long escalateAfterNanos() { return escalateAfterMillis * 1_000_000L; }
+
+    /** Variante mit eigener Wartegrenze für die Aufstufung von Bremsstufen (Entscheidung 30). */
+    public SchedulerConfig withEscalateAfterMillis(int v) {
+        return new SchedulerConfig(packetMillis, reserveFraction, repeatsPerCommand, refreshPacketsPerLocoPerSecond, minCommandsPerSecond,
+                burstCommands, haltBorrowCommands, turnoutCost, activeHoldSeconds, overloadBacklog, safetyWaitLimitMillis,
+                automaticWaitLimitMillis, timetableWaitLimitMillis, manualWaitLimitMillis, comfortWaitLimitMillis,
+                overloadClearSeconds, overloadReportSeconds, metricsReportSeconds, demandWindowSeconds, v);
+    }
 
     private static void require(boolean ok, String message) {
         if (!ok) throw new IllegalArgumentException(message);

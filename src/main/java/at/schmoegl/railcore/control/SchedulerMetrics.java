@@ -27,15 +27,19 @@ import java.util.Map;
  * @param overloadEvents       Beginn einer Überlast im Zeitraum
  * @param overloaded           Überlast aktuell erkannt
  * @param overloadReasons      Befund der Überlast (leer, wenn keine)
+ * @param escalations          zur Sicherheit aufgestufte Bremsstufen der Automatik (Entscheidung 30)
+ * @param safetyOwnWait        Wartezeit der echten Sicherheitsbefehle (Halt, Überwachung) – Teil von Sicherheit
+ * @param escalatedWait        Wartezeit aufgestufter Bremsstufen nach der Aufstufung – Teil von Sicherheit
  */
 public record SchedulerMetrics(double budgetPerSecond, int activeLocos, int backlog, int maxBacklog, double utilization,
                                Map<CommandPriority, TimingStatistics.Summary> waits, long submitted, long sent,
                                long suppressed, long coalesced, long rejectedLowerPriority, long droppedAtDispatch,
                                long droppedOnEmergency, long retransmissions, long overloadEvents, boolean overloaded,
-                               List<String> overloadReasons) {
+                               List<String> overloadReasons, long escalations,
+                               TimingStatistics.Summary safetyOwnWait, TimingStatistics.Summary escalatedWait) {
 
     public static final SchedulerMetrics EMPTY = new SchedulerMetrics(0, 0, 0, 0, 0, Map.of(), 0, 0, 0, 0, 0, 0, 0, 0, 0,
-            false, List.of());
+            false, List.of(), 0, TimingStatistics.Summary.EMPTY, TimingStatistics.Summary.EMPTY);
 
     public SchedulerMetrics {
         EnumMap<CommandPriority, TimingStatistics.Summary> m = new EnumMap<>(CommandPriority.class);
@@ -54,9 +58,9 @@ public record SchedulerMetrics(double budgetPerSecond, int activeLocos, int back
         StringBuilder b = new StringBuilder(String.format(Locale.ROOT,
                 "Budget %.1f/s, aktive Loks %d, Rückstau %d (max %d), Auslastung %.0f %%, gesendet %d, unverändert %d, "
                         + "zusammengefasst %d, niedriger abgewiesen %d, beim Senden verworfen %d, beim Nothalt verworfen %d, "
-                        + "Neuübertragungen %d, Überlast %s",
+                        + "Neuübertragungen %d, Aufstufungen %d, Überlast %s",
                 budgetPerSecond, activeLocos, backlog, maxBacklog, utilization * 100, sent, suppressed, coalesced,
-                rejectedLowerPriority, droppedAtDispatch, droppedOnEmergency, retransmissions,
+                rejectedLowerPriority, droppedAtDispatch, droppedOnEmergency, retransmissions, escalations,
                 overloaded ? "ja" : (overloadEvents > 0 ? "zeitweise (" + overloadEvents + "×)" : "nein")));
         for (CommandPriority p : CommandPriority.QUEUED) {
             TimingStatistics.Summary s = waitOf(p);

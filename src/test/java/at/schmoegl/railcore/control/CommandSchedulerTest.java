@@ -228,7 +228,120 @@ public class CommandSchedulerTest {
         runFor(100 * MS);
         assertEquals(List.of("drive 1 5 FORWARD", "drive 20 10 FORWARD"), station.sent);
         assertEquals(1L, ex.scheduler().metrics().waitOf(CommandPriority.SAFETY).count());
-        assertEquals(0L, ex.scheduler().metrics().waitOf(CommandPriority.AUTOMATIC).count());
+        assertEquals(1L, ex.scheduler().metrics().waitOf(CommandPriority.AUTOMATIC).count());   // Wartezeit bis zum Ersetzen
+    }
+
+    // ================================================================== Aufstufung (Entscheidung 30)
+
+    /** Knappes Budget (7,5/s bei drei aktiven Loks), Bucket 1: jede Lok fährt mit Stufe 50 (gesendet). */
+    private void setupSlowWithThreeRunningLocos() {
+        setup(SchedulerConfig.defaults().withPacketMillis(50).withBurst(1, 0));
+        for (int a = 20; a <= 22; a++) drive(a, 50, CommandPriority.MANUAL);   // Automatik-Statistik bleibt leer
+        runFor(1_000 * MS);
+        assertEquals(3, station.sent.size());
+        station.sent.clear();
+        station.sentAt.clear();
+    }
+
+    private CommandSink.DriveListener escalationRecorder(List<Long> at) {
+        return new CommandSink.DriveListener() {
+            @Override public void sent(int step, Direction d, long t) { }
+            @Override public void dropped(String reason) { }
+            @Override public void escalated() { at.add(clock.nanoTime()); }
+        };
+    }
+
+    private boolean drive(int address, int step, CommandPriority p, CommandSink.DriveListener l) {
+        return ex.commands().drive(address, step, SpeedSteps.S128, Direction.FORWARD, p, l);
+    }
+
+    public void testWaitingBrakeStepIsEscalatedExactlyAtItsLimit() {
+        setupSlowWithThreeRunningLocos();
+        double slotMs = 1_000.0 / ex.scheduler().budgetPerSecond();   // ≈ 133 ms
+        List<Long> escalatedAt = new ArrayList<>();
+        long t0 = clock.nanoTime();
+        drive(20, 40, CommandPriority.AUTOMATIC);              // sofort (Token)
+        drive(21, 40, CommandPriority.AUTOMATIC);              // ein Sendeplatz Wartezeit: unter der Grenze
+        drive(22, 40, CommandPriority.AUTOMATIC, escalationRecorder(escalatedAt));   // zwei Sendeplätze: darüber
+        runFor(1_000 * MS);
+        assertEquals(List.of("drive 20 40 FORWARD", "drive 21 40 FORWARD", "drive 22 40 FORWARD"), station.sent);
+        assertEquals(List.of(t0 + 150 * MS), escalatedAt);     // genau zur Grenze, nicht erst im Takt
+        SchedulerMetrics m = ex.scheduler().metrics();
+        assertEquals(1L, m.escalations());
+        // nachvollziehbar: 150 ms in Automatik, danach der Rest bis zum Senden in Sicherheit
+        assertEquals(1L, m.waitOf(CommandPriority.SAFETY).count());
+        assertTrue(Math.abs(m.waitOf(CommandPriority.SAFETY).maxMs() - (2 * slotMs - 150)) < 0.2,
+                "Wartezeit in Sicherheit " + m.waitOf(CommandPriority.SAFETY).maxMs());
+        assertTrue(Math.abs(m.waitOf(CommandPriority.AUTOMATIC).maxMs() - 150) < 0.2, "Wartezeit in Automatik bis zur Aufstufung");
+    }
+
+    public void testEscalatedBrakeStepStaysBehindRealSafetyCommands() {
+        setupSlowWithThreeRunningLocos();
+        drive(20, 40, CommandPriority.AUTOMATIC);              // sofort
+        drive(21, 40, CommandPriority.AUTOMATIC);              // Bremsstufe, älter
+        clock.advanceNanos(1_000);
+        drive(23, 10, CommandPriority.SAFETY);                 // nimmt den nächsten Platz (neue Lok)
+        drive(24, 10, CommandPriority.SAFETY);
+        runFor(2_000 * MS);
+        // 21 wartet länger als 150 ms → aufgestuft; echte Sicherheitsbefehle bleiben trotzdem davor
+        // (Entscheidung 28: Sicherheitseingriffe warten nie hinter dem Normalbetrieb)
+        assertEquals(List.of("drive 20 40 FORWARD", "drive 23 10 FORWARD", "drive 24 10 FORWARD", "drive 21 40 FORWARD"),
+                station.sent);
+        assertEquals(1L, ex.scheduler().metrics().escalations());
+    }
+
+    public void testIncreasesAndStartsAreNeverEscalated() {
+        setupSlowWithThreeRunningLocos();
+        drive(20, 40, CommandPriority.AUTOMATIC);              // sofort
+        drive(21, 60, CommandPriority.AUTOMATIC);              // Beschleunigen
+        drive(30, 20, CommandPriority.AUTOMATIC);              // Anfahren einer neuen Lok
+        drive(22, 55, CommandPriority.AUTOMATIC);
+        runFor(2_000 * MS);
+        assertEquals(4, station.sent.size());
+        assertEquals(0L, ex.scheduler().metrics().escalations());
+        assertEquals(0L, ex.scheduler().metrics().waitOf(CommandPriority.SAFETY).count());
+        assertTrue(ex.scheduler().metrics().waitOf(CommandPriority.AUTOMATIC).maxMs() > 300, "lange gewartet, trotzdem Automatik");
+    }
+
+    public void testEscalatedBrakeStepTakesLaterValuesOfItsClass() {
+        setupSlowWithThreeRunningLocos();
+        drive(20, 40, CommandPriority.AUTOMATIC);              // sofort
+        drive(21, 40, CommandPriority.AUTOMATIC);
+        drive(22, 40, CommandPriority.AUTOMATIC);
+        runFor(160 * MS);                                      // 22 ist aufgestuft, wartet noch
+        assertEquals(1L, ex.scheduler().metrics().escalations());
+        assertTrue(drive(22, 30, CommandPriority.AUTOMATIC), "neuere Bremsstufe wird übernommen, nicht abgewiesen");
+        assertEquals(0L, ex.scheduler().metrics().rejectedLowerPriority());
+        runFor(1_000 * MS);
+        assertEquals("drive 22 30 FORWARD", station.sent.get(station.sent.size() - 1));   // nur der neueste Wert
+        assertEquals(1L, ex.scheduler().metrics().waitOf(CommandPriority.SAFETY).count());   // 22 in Sicherheit gesendet
+
+        // Rückkehr in die eigene Klasse: eine spätere Erhöhung ist keine Bremsstufe mehr
+        drive(20, 30, CommandPriority.AUTOMATIC);              // Token weg
+        drive(21, 30, CommandPriority.AUTOMATIC);
+        drive(22, 20, CommandPriority.AUTOMATIC);
+        runFor(160 * MS);
+        assertEquals(2L, ex.scheduler().metrics().escalations());
+        drive(22, 45, CommandPriority.AUTOMATIC);              // über dem gesendeten Wert 30: Beschleunigen
+        long safetyBefore = ex.scheduler().metrics().waitOf(CommandPriority.SAFETY).count();
+        runFor(1_000 * MS);
+        assertEquals("drive 22 45 FORWARD", station.sent.get(station.sent.size() - 1));
+        assertEquals(safetyBefore, ex.scheduler().metrics().waitOf(CommandPriority.SAFETY).count());   // als Automatik gesendet
+    }
+
+    public void testEscalationNeverDelaysEmergencyStop() {
+        setupSlowWithThreeRunningLocos();
+        drive(20, 40, CommandPriority.AUTOMATIC);
+        drive(21, 40, CommandPriority.AUTOMATIC);
+        drive(22, 40, CommandPriority.AUTOMATIC);
+        runFor(160 * MS);
+        assertEquals(1L, ex.scheduler().metrics().escalations());
+        int before = station.sent.size();
+        ex.emergencyStop("test", "Nothalt-Taste");
+        assertEquals(1, station.emergencyStops.get());         // sofort, am Befehlsplaner vorbei
+        runFor(1_000 * MS);
+        assertEquals(before, station.sent.size());             // aufgestufte Bremsstufe verworfen, nichts nachgesendet
+        assertTrue(ex.scheduler().metrics().droppedOnEmergency() >= 1, "beim Nothalt verworfen");
     }
 
     public void testPhaseOffsetsAreSpreadOverTheTick() {

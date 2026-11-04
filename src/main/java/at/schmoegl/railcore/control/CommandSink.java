@@ -27,6 +27,9 @@ public interface CommandSink {
          */
         void dropped(String reason);
 
+        /** Die wartende Bremsstufe wurde wegen langer Wartezeit zur Sicherheit aufgestuft (Entscheidung 30). */
+        default void escalated() { }
+
         DriveListener NONE = new DriveListener() {
             @Override public void sent(int speedStep, Direction direction, long sentNanos) { }
             @Override public void dropped(String reason) { }

@@ -72,6 +72,7 @@ public final class CommandScheduler implements CommandSink {
         final Slot slot;
         final long firstNanos;                 // erstes Einreihen: Reihenfolge innerhalb der Klasse
         long classNanos;                       // Eintritt in die aktuelle Klasse: Wartezeit je Klasse
+        boolean escalated;                     // Bremsstufe von Automatik zur Sicherheit aufgestuft (Entscheidung 30)
         final long seq;
         final int cost;
         CommandPriority priority;
@@ -104,6 +105,7 @@ public final class CommandScheduler implements CommandSink {
     private static final Comparator<Pending> ORDER = Comparator
             .comparingInt((Pending p) -> p.priority.ordinal())
             .thenComparingInt(p -> p.halt() ? 0 : 1)
+            .thenComparingInt(p -> p.escalated ? 1 : 0)          // echte Sicherheitseingriffe vor Aufstufungen
             .thenComparingInt(p -> p.reduction() ? 0 : 1)        // Entscheidung 28: Bremsen vor Anfahren
             .thenComparingLong(p -> p.firstNanos)
             .thenComparingLong(p -> p.seq);
@@ -124,6 +126,7 @@ public final class CommandScheduler implements CommandSink {
     private long seq;
     private boolean dispatching;
     private ScheduledAction wake;
+    private ScheduledAction escalationWake;
 
     // Token-Bucket
     private double budget;
@@ -157,8 +160,10 @@ public final class CommandScheduler implements CommandSink {
     /** Zähler und Wartezeiten eines Zeitraums. */
     private static final class Counters {
         final EnumMap<CommandPriority, TimingStatistics> wait = new EnumMap<>(CommandPriority.class);
+        /** Sicherheit aufgeteilt: echte Sicherheitsbefehle und aufgestufte Bremsstufen (Teil der Sicherheit). */
+        final TimingStatistics safetyOwn = new TimingStatistics(), escalated = new TimingStatistics();
         long submitted, sent, suppressed, coalesced, rejected, droppedAtDispatch, droppedOnEmergency, retransmissions,
-                overloadEvents;
+                overloadEvents, escalations;
         int maxBacklog;
         double offered, spent;
 
@@ -166,7 +171,9 @@ public final class CommandScheduler implements CommandSink {
 
         void reset() {
             wait.values().forEach(TimingStatistics::reset);
-            submitted = sent = suppressed = coalesced = rejected = droppedAtDispatch = droppedOnEmergency = retransmissions
+            safetyOwn.reset();
+            escalated.reset();
+            submitted = sent = suppressed = coalesced = rejected = droppedAtDispatch = droppedOnEmergency = retransmissions = escalations
                     = overloadEvents = 0;
             maxBacklog = 0;
             offered = spent = 0;
@@ -264,6 +271,7 @@ public final class CommandScheduler implements CommandSink {
         double ahead = 1;
         for (Pending q : queue) {
             if (p.outranks(q.priority)) break;     // Warteschlange ist nach Klasse sortiert
+            if (p == CommandPriority.SAFETY && q.escalated) continue;   // echte Sicherheitsbefehle stehen davor
             ahead += q.cost;
         }
         double need = ahead - tokens;
@@ -386,8 +394,10 @@ public final class CommandScheduler implements CommandSink {
         Pending p = slot.pending;
         boolean halt = value instanceof DriveValue d && d.step() == 0;
         if (p != null) {
+            // Entscheidung 30: eine aufgestufte Bremsstufe nimmt spätere Werte ihrer Ursprungsklasse weiter auf
+            boolean continuesEscalated = p.escalated && priority == CommandPriority.AUTOMATIC;
             String why = null;
-            if (p.priority.outranks(priority))
+            if (p.priority.outranks(priority) && !continuesEscalated)
                 why = "höher eingestufter Befehl (" + p.priority.german() + ") wartet noch";
             else if (p.halt() && !halt)
                 why = "wartender Halt wird nur durch Halt ersetzt";
@@ -418,8 +428,16 @@ public final class CommandScheduler implements CommandSink {
         if (p != null) {
             queue.remove(p);
             p.value = value;
-            if (priority != p.priority) p.classNanos = now;   // Wartezeit zählt je Klasse ab Eintritt
-            p.priority = priority;                 // gleich oder höher (niedriger wurde oben abgewiesen)
+            if (p.escalated && priority == CommandPriority.AUTOMATIC && isReduction(value, slot.sent)) {
+                // weiterhin Bremsstufe: bleibt Sicherheit, Wartezeit läuft dort weiter
+            } else if (priority != p.priority) {
+                recordClassWait(p, now);           // Wartezeit je Klasse ab Eintritt
+                p.classNanos = now;
+                p.priority = priority;             // höher, gleich oder Rückkehr einer Aufstufung in ihre Klasse
+                p.escalated = false;
+            } else {
+                p.escalated = false;
+            }
             p.listener = listener;
             queue.add(p);
             total.coalesced++;
@@ -456,29 +474,94 @@ public final class CommandScheduler implements CommandSink {
     private void tryDispatch() {
         if (dispatching) return;                   // Aufruf aus einer Rückmeldung: die äußere Schleife sendet weiter
         dispatching = true;
+        List<Pending> escalated;
         try {
-            while (true) {
-                long now = clock.nanoTime();
-                refill(now);
-                Pending head = queue.isEmpty() ? null : queue.first();
-                if (head == null || (head.priority == CommandPriority.COMFORT && overloaded)) {
-                    cancelWake();                  // Komfort bei Überlast zurückgestellt; der Takt prüft erneut
-                    return;
-                }
-                double floor = head.halt() ? -config.haltBorrowCommands() : 0;
-                // Kosten über dem Bucket-Inhalt (Weiche bei kleinem Bucket): starten bei vollem Bucket, Rest als Schuld
-                double missing = Math.min(head.cost, config.burstCommands()) + floor - tokens;
-                if (missing > EPS) {
-                    scheduleWake(now, missing);
-                    return;
-                }
-                queue.pollFirst();
-                head.slot.pending = null;
-                tokens -= head.cost;
-                send(head, now);
-            }
+            escalated = escalateDue(clock.nanoTime());
+            dispatchLoop();
         } finally {
             dispatching = false;
+        }
+        for (Pending p : escalated) p.listener.escalated();
+        planEscalation(clock.nanoTime());
+    }
+
+    /**
+     * Entscheidung 30: Bremsstufen (Absenkungen) der Automatik, die länger als {@code escalateAfterMillis} warten,
+     * werden zur Sicherheit aufgestuft. Erhöhungen und Anfahren nie. Die bisherige Wartezeit wird der Automatik
+     * zugerechnet, ab jetzt zählt sie in der Sicherheit.
+     */
+    private List<Pending> escalateDue(long now) {
+        long limit = config.escalateAfterNanos();
+        List<Pending> due = List.of();
+        for (Pending p : queue) {
+            if (p.priority == CommandPriority.AUTOMATIC && p.reduction() && now - p.classNanos >= limit) {
+                if (due.isEmpty()) due = new ArrayList<>();
+                due.add(p);
+            }
+        }
+        for (Pending p : due) {
+            queue.remove(p);
+            recordClassWait(p, now);
+            p.priority = CommandPriority.SAFETY;
+            p.classNanos = now;
+            p.escalated = true;
+            queue.add(p);
+            total.escalations++;
+            window.escalations++;
+        }
+        return due;
+    }
+
+    /** Wecker auf die nächste fällige Aufstufung (genau zur Wartegrenze, nicht erst im nächsten Takt). */
+    private void planEscalation(long now) {
+        long limit = config.escalateAfterNanos();
+        long next = Long.MAX_VALUE;
+        for (Pending p : queue)
+            if (p.priority == CommandPriority.AUTOMATIC && p.reduction()) next = Math.min(next, p.classNanos + limit);
+        if (next == Long.MAX_VALUE) {
+            if (escalationWake != null) escalationWake.cancel();
+            escalationWake = null;
+            return;
+        }
+        if (escalationWake != null && escalationWake.isPending()) {
+            if (escalationWake.dueNanos() == next) return;
+            escalationWake.cancel();
+        }
+        escalationWake = executor.schedule(Math.max(next, now), "Aufstufung Bremsstufe", this::tryDispatch);
+    }
+
+    /** Wartezeit eines Befehls in seiner bisherigen Klasse erfassen (beim Senden oder beim Klassenwechsel). */
+    private void recordClassWait(Pending p, long now) {
+        long waited = Math.max(0, now - p.classNanos);
+        total.wait.get(p.priority).record(waited);
+        window.wait.get(p.priority).record(waited);
+        if (p.priority == CommandPriority.SAFETY) {
+            (p.escalated ? total.escalated : total.safetyOwn).record(waited);
+            (p.escalated ? window.escalated : window.safetyOwn).record(waited);
+        }
+        evalWait[p.priority.ordinal()].record(overloadRelevantWait(p.priority, p.classNanos, now));
+    }
+
+    private void dispatchLoop() {
+        while (true) {
+            long now = clock.nanoTime();
+            refill(now);
+            Pending head = queue.isEmpty() ? null : queue.first();
+            if (head == null || (head.priority == CommandPriority.COMFORT && overloaded)) {
+                cancelWake();                      // Komfort bei Überlast zurückgestellt; der Takt prüft erneut
+                return;
+            }
+            double floor = head.halt() ? -config.haltBorrowCommands() : 0;
+            // Kosten über dem Bucket-Inhalt (Weiche bei kleinem Bucket): starten bei vollem Bucket, Rest als Schuld
+            double missing = Math.min(head.cost, config.burstCommands()) + floor - tokens;
+            if (missing > EPS) {
+                scheduleWake(now, missing);
+                return;
+            }
+            queue.pollFirst();
+            head.slot.pending = null;
+            tokens -= head.cost;
+            send(head, now);
         }
     }
 
@@ -497,11 +580,7 @@ public final class CommandScheduler implements CommandSink {
     }
 
     private void send(Pending p, long now) {
-        long waited = Math.max(0, now - p.classNanos);
-        total.wait.get(p.priority).record(waited);
-        window.wait.get(p.priority).record(waited);
-        int k = p.priority.ordinal();
-        evalWait[k].record(overloadRelevantWait(p.priority, p.classNanos, now));
+        recordClassWait(p, now);
         Slot s = p.slot;
         switch (p.value) {
             case DriveValue d -> sendDrive(p, d, now);
@@ -685,6 +764,6 @@ public final class CommandScheduler implements CommandSink {
         double util = c.offered > 0 ? Math.min(1.0, c.spent / c.offered) : 0;
         return new SchedulerMetrics(budget, activeLocos, queue.size(), c.maxBacklog, util, w, c.submitted, c.sent,
                 c.suppressed, c.coalesced, c.rejected, c.droppedAtDispatch, c.droppedOnEmergency, c.retransmissions,
-                c.overloadEvents, overloaded, overloadReasons);
+                c.overloadEvents, overloaded, overloadReasons, c.escalations, c.safetyOwn.summary(), c.escalated.summary());
     }
 }
