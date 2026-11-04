@@ -693,6 +693,10 @@ public final class ControlExecutor {
             // Lastenheft 7: nach Wiederverbindung sofort Nothalt, Zustände neu einlesen, Freigabe durch Bediener
             emergencyStop("verbindung", "Verbindung wiederhergestellt – Nothalt vor dem Neueinlesen");
             scheduler.connectionRestored();
+            // Entscheidung 37 (4): Fähigkeiten und Melder wurden beim Verlust verworfen – aktiv neu einlesen
+            if (commands.refreshStationState(CommandPriority.SAFETY))
+                journal.info("verbindung", "STATE_REFRESH", "Zustände der Zentrale werden neu eingelesen "
+                        + "(Fähigkeiten, Gleisspannung, Melder)");
         }
         lastComm = s;
     }
@@ -766,6 +770,7 @@ public final class ControlExecutor {
             why = "Gleisspannung bzw. Bezirk noch nicht wieder versorgt";
         if (why != null) { reject(what, why); return; }
         plant.clearCautions(r.trainId(), r.operator());
+        plant.train(r.trainId()).ifPresent(t -> divergences.remove(t.address()));   // Bediener hat entschieden
     }
 
     private void acknowledge(String operator) {
@@ -873,7 +878,8 @@ public final class ControlExecutor {
      * Booster-Bezirk meldet Kurzschluss, Überlast oder Ausfall (Lastenheft 7): Bezirk ist spannungslos (Hardware),
      * Melder dort ohne Versorgung, Züge im Bezirk unsicher, Automatik hält geordnet. Ohne Gleisgraph ist weder die
      * Zuordnung Melder → Bezirk noch Zug → Bezirk bekannt; vorläufig gelten deshalb <b>alle</b> Melder und Züge als
-     * betroffen (sicherste Variante, Schritt B aus Entscheidung 35 bringt die Zuordnung).
+     * betroffen. Bewusste Zwischenlösung (sicherste Variante, Entscheidung 37 Punkt 1) bis Schritt B aus
+     * Entscheidung 35 die Zuordnung aus dem Gleisgraph liefert.
      */
     private void onPowerDistrict(int district, DistrictPower p) {
         if (plant.operatingState() == OperatingState.OFFLINE) return;
@@ -918,6 +924,12 @@ public final class ControlExecutor {
      * erneut gesendet – über Schranke und Befehlsplaner, Klasse Sicherheit; ist Fahren inzwischen gesperrt, Halt. Der
      * Zug wird mit größerem Sicherheitsabstand gekennzeichnet und gilt als unbestätigt. Stellvertreter-Adressen
      * (9000–9999) sind Handregler und werden hier nicht geprüft.
+     * <p>
+     * Erkannt wird nur, was die Zentrale meldet (Broadcast, Echo, Antwort auf eine Abfrage). Bewusst gibt es keine
+     * laufende Abfrage aller fahrenden Loks (Entscheidung 37 Punkt 5); gezielt abgefragt wird erst bei Verdacht
+     * (Positionsabweichung), sobald die Positionsverfolgung steht (Schritte C/D). Wechseln sich Handregler und
+     * RailCore ab ({@link SupervisionConfig#conflictDivergences()} Abweichungen im Zeitfenster), wird nicht weiter
+     * dagegen gesendet, sondern gehalten; der Bediener entscheidet (Entscheidung 37 Punkt 6).
      */
     private void checkDivergence(LocoState s) {
         int a = s.address();
@@ -929,10 +941,33 @@ public final class ControlExecutor {
                 + s.direction() + ", gesendet war Stufe " + sent.step() + " " + sent.direction()
                 + " – erlaubter Wert wird erneut gesendet (Fremdsteuerung oder verlorener Befehl)");
         scheduler.markDriveUnconfirmed(a);
-        if (!commands.drive(a, sent.step(), sent.steps(), sent.direction(), CommandPriority.SAFETY))
-            commands.drive(a, 0, sent.steps(), sent.direction(), CommandPriority.SAFETY);   // Halten ist immer erlaubt
         plant.trainByAddress(a).ifPresent(t -> plant.addCaution(t.id(), TrainCaution.FOREIGN_CONTROL,
                 "Zentrale meldete Stufe " + s.speedStep() + " " + s.direction() + " statt " + sent.step() + " " + sent.direction()));
+        if (conflictReached(a)) {
+            // Entscheidung 37 (6): Wechselspiel Handregler ↔ RailCore – nicht weiter dagegen ansenden, sondern halten;
+            // die Kennzeichnung sperrt Anfahren, bis der Bediener entschieden hat (ReleaseTrainCaution)
+            journal.critical("sicherheit", "LOCO_CONTROL_CONFLICT", "Lok " + a + train + ": "
+                    + supervisionConfig.conflictDivergences() + " Abweichungen in " + supervisionConfig.conflictWindowMillis()
+                    + " ms – Handregler und RailCore steuern abwechselnd; Halt, Bediener entscheidet");
+            plant.trainByAddress(a).ifPresent(t -> plant.addCaution(t.id(), TrainCaution.CONFLICTING_CONTROL,
+                    "Abweichungen wiederholt – Halt, Bediener entscheidet"));
+            commands.drive(a, 0, sent.steps(), sent.direction(), CommandPriority.SAFETY);
+            return;
+        }
+        if (!commands.drive(a, sent.step(), sent.steps(), sent.direction(), CommandPriority.SAFETY))
+            commands.drive(a, 0, sent.steps(), sent.direction(), CommandPriority.SAFETY);   // Halten ist immer erlaubt
+    }
+
+    /** Abweichungen je Lok im gleitenden Zeitfenster (nur Steuerungs-Thread). */
+    private final java.util.Map<Integer, java.util.ArrayDeque<Long>> divergences = new java.util.HashMap<>();
+
+    /** Abweichung zählen; @return true, wenn die Grenze im Zeitfenster erreicht ist */
+    private boolean conflictReached(int address) {
+        long now = clock.nanoTime();
+        var q = divergences.computeIfAbsent(address, k -> new java.util.ArrayDeque<>());
+        q.addLast(now);
+        while (!q.isEmpty() && now - q.peekFirst() > supervisionConfig.conflictWindowNanos()) q.pollFirst();
+        return q.size() >= supervisionConfig.conflictDivergences();
     }
 
     private void onRailCom(int contact, List<Integer> addresses) {

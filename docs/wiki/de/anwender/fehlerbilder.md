@@ -22,7 +22,7 @@ Die Anzeige in der Oberfläche folgt. Bis dahin stehen alle Meldungen im **Journ
 
 **Was Sie sehen:** „Verbindung zur Zentrale verloren“ (`COMM_LOST`), Zustand **STÖRUNG**, alle Melder „unbekannt“, alle Züge „unbestätigt“.
 
-**Was RailCore tut:** Nach 5 s ohne Lebenszeichen sendet RailCore Nothalt und verwirft alles, was die Zentrale gemeldet hatte. Sobald die Zentrale wieder antwortet, sendet RailCore sofort erneut Nothalt und Halt an alle bekannten Loks – nie eine Fahrstufe. Der Nothalt bleibt gesetzt.
+**Was RailCore tut:** Nach 5 s ohne Lebenszeichen sendet RailCore Nothalt und verwirft alles, was die Zentrale gemeldet hatte. Sobald die Zentrale wieder antwortet, sendet RailCore sofort erneut Nothalt und Halt an alle bekannten Loks – nie eine Fahrstufe – und liest Fähigkeiten, Gleisspannung und Melder neu ein (`STATE_REFRESH`). Bis dahin bleiben die Melder „unbekannt“. Der Nothalt bleibt gesetzt.
 
 **Was Sie tun:**
 1. Ursache beheben (Netzwerk, Stromversorgung der Z21).
@@ -64,7 +64,9 @@ Kommt die Versorgung zurück, gilt das **nie** als Freimeldung. RailCore fragt n
 
 **Was Sie tun:** Versorgung und CAN-Kabel des Moduls prüfen. Bleibt ein Melder nach der Rückkehr „unbekannt“ (`DETECTOR_RECHECK_FAILED`), den Melder prüfen oder neu verbinden.
 
-Hinweis: An der Z21 ist die Melderabfrage noch nicht angebunden (Prüfung an der Hardware steht aus). Nach Gleisspannung aus bleiben die Melder dort deshalb bis zum Neuverbinden „unbekannt“.
+Die regelmäßige Abfrage läuft ab Werk alle 2 s, stumm gilt ein Melder nach 5 s; beide Werte sind einstellbar.
+
+Hinweis: An der Z21 ist die Melderabfrage noch nicht angebunden; das folgt nach dem nächsten Prüflauf an der Hardware. Nach Gleisspannung aus bleiben die Melder dort deshalb bis zum Neuverbinden „unbekannt“.
 
 ## Flackernder Melder
 
@@ -84,9 +86,11 @@ Hinweis: An der Z21 ist die Melderabfrage noch nicht angebunden (Prüfung an der
 
 **Was RailCore tut:** Meldet die Zentrale für eine Lok eine andere Fahrstufe oder Richtung, als RailCore gesendet hat, sendet RailCore den erlaubten Wert erneut. Ist Fahren inzwischen nicht mehr erlaubt, sendet RailCore Halt. Der Zug wird gekennzeichnet; die Kennzeichnung wirkt sich mit der Reservierung (Meilenstein 2) auf die Abstände aus.
 
+Wechseln sich ein Handregler und RailCore bei derselben Lok ab (3 Abweichungen in 10 s, einstellbar), sendet RailCore nicht weiter dagegen an, sondern hält die Lok (`LOCO_CONTROL_CONFLICT`). Sie darf erst wieder anfahren, wenn Sie entschieden und die Kennzeichnung aufgehoben haben.
+
 **Was Sie tun:** Prüfen, ob ein Handregler direkt die echte Lokadresse fährt. Handregler an der Z21 gehören auf eine Stellvertreter-Adresse (9000–9999). Danach die Kennzeichnung aufheben.
 
-Hinweis: Die Z21 meldet Fahrbefehle anderer Geräte nicht von selbst. RailCore erkennt die Abweichung deshalb nur, wenn die Zentrale den Zustand der Lok meldet, etwa auf eine Abfrage.
+Hinweis: Die Z21 meldet Fahrbefehle anderer Geräte nicht von selbst. RailCore erkennt die Abweichung deshalb nur, wenn die Zentrale den Zustand der Lok meldet, etwa auf eine Abfrage. Fahrende Loks werden bewusst nicht laufend abgefragt; gezielt abgefragt wird bei Verdacht, sobald die Positionsverfolgung gebaut ist.
 
 ## Interner Fehler
 

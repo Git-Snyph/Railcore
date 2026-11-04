@@ -170,9 +170,22 @@ public class FaultCatalogSimTest {
         rt.submit(new ControlCommand.RequestReady("Bediener"));
         runMs(50);
         assertEquals(OperatingState.READY, rt.snapshot().operatingState());
-        // Die Fähigkeiten der Zentrale wurden beim Verlust verworfen; ohne Neuverbinden keine Melderabfrage, die Melder
-        // bleiben „unbekannt“ (nie aus dem alten Stand übernommen)
-        assertEquals(SensorState.UNKNOWN, rt.snapshot().sensor(1));
+        // Entscheidung 37 (4): nach der Wiederverbindung ohne Neuverbinden werden Fähigkeiten und Melder neu eingelesen
+        assertEquals(1, journal.byCode("STATE_REFRESH").size());
+        assertTrue(rt.snapshot().capabilities().has(StationCapabilities.Feature.DETECTOR_STATUS_QUERY), "Fähigkeiten neu");
+        assertEquals(SensorState.FREE, rt.snapshot().sensor(1));
+    }
+
+    public void testStatesAreNotTakenOverBeforeRefreshAfterReconnect() {
+        bringReady(true);
+        script("0 verbindung-weg 6000");
+        runMs(6_000);
+        for (int i = 0; i < 500 && rt.snapshot().communication() != CommunicationWatchdog.Status.OK; i++) runMs(1);
+        assertEquals(CommunicationWatchdog.Status.OK, rt.snapshot().communication());    // gerade wieder da;
+        // die Antwort auf das Neueinlesen ist noch unterwegs
+        assertEquals(SensorState.UNKNOWN, rt.snapshot().sensor(1));              // nie aus dem alten Stand übernommen
+        runMs(1_000);
+        assertEquals(SensorState.FREE, rt.snapshot().sensor(1));                  // erst nach Neueinlesen + Freimeldeverzögerung
     }
 
     // ================================================================== Paketverlust

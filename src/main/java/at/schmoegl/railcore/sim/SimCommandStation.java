@@ -177,6 +177,25 @@ public final class SimCommandStation extends AbstractCommandStation {
         });
     }
 
+    /**
+     * Zustände neu einlesen: wie beim Verbinden meldet die Zentrale Fähigkeiten (falls eingestellt), Gleisspannung
+     * und den Zustand aller versorgten Melder.
+     */
+    @Override
+    public void refreshState() {
+        if (!reachesStation()) return;
+        world.after(REPLY_NANOS, () -> {
+            if (capabilities != null) { StationCapabilities c = capabilities; toController(() -> fire(l -> l.onCapabilities(c))); }
+            TrackPower p = trackPower;
+            toController(() -> fire(l -> l.onTrackPower(p)));
+            for (var e : contacts.entrySet()) {
+                int c = e.getKey();
+                boolean occupied = e.getValue();
+                if (powered(c)) toController(() -> { long ts = world.now(); fire(l -> l.onFeedback(c, occupied, ts)); });
+            }
+        });
+    }
+
     @Override public StationCapabilities capabilities() { return capabilities == null ? StationCapabilities.UNKNOWN : capabilities; }
 
     /** Melderereignis aus der Welt an die Listener (Empfangszeitpunkt = jetzt). */

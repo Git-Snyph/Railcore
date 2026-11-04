@@ -69,4 +69,10 @@ public interface CommandSink {
      * @return false, wenn abgewiesen oder nicht unterstützt
      */
     default boolean requestDetectorStatus(CommandPriority priority) { return false; }
+
+    /**
+     * Zustände der Zentrale neu einlesen (Fähigkeiten, Gleisspannung, Melder), z. B. nach einer Wiederverbindung ohne
+     * Neuverbinden; kein DCC-Paket, kein DCC-Budget. @return false, wenn abgewiesen
+     */
+    default boolean refreshStationState(CommandPriority priority) { return false; }
 }

@@ -44,6 +44,8 @@ Melder schreibt man als Nummer oder `Modul:Eingang` (`2:3`). Zeit im Skript in m
 9000  fremdsteuerung  3 90 vor
 ```
 
+`refreshState()` (Zustände neu einlesen nach Wiederverbindung) beantwortet die simulierte Zentrale wie beim Verbinden mit Fähigkeiten, Gleisspannung und allen versorgten Meldern.
+
 Weitere Schalter der simulierten Zentrale (ab Werk aus): `setCapabilities` meldet Fähigkeiten beim Verbinden (z. B. die Melderabfrage), `setAnswerQueries` beantwortet Lokabfragen aus ihrem Speicher, `setLocoBroadcast` meldet Fremdsteuerung sofort (die Z21 tut das nicht). Die Melderabfrage beantwortet sie für alle versorgten Melder, auch unveränderte; `defineContacts` legt dafür die Melder an.
 
 Für Hänger und internen Fehler muss der `SimWorld.Controller` des Tests `watchdogCheck()` (Prüfung des Executor-Watchdogs) und `injectInternalError()` umsetzen; ein Beispiel steht in `FaultCatalogSimTest`.

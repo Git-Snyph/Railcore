@@ -393,14 +393,18 @@ public final class PlantState {
     }
 
     /** Sperrt eine Kennzeichnung der Lok {@code address} Anfahren und Beschleunigen? */
-    boolean increaseBlocked(int address) {
+    boolean increaseBlocked(int address) { return !increaseBlockingCautions(address).isEmpty(); }
+
+    /** Text der Kennzeichnungen, die der Lok {@code address} Anfahren und Beschleunigen sperren (leer = keine). */
+    String increaseBlockingCautions(int address) {
         guard.check("Kennzeichnung lesen");
+        List<String> out = new java.util.ArrayList<>();
         for (Train t : trains.values()) {
             if (t.address() != address) continue;
             java.util.Set<TrainCaution> c = cautions.get(t.id());
-            if (c != null && c.stream().anyMatch(TrainCaution::blocksIncrease)) return true;
+            if (c != null) c.stream().filter(TrainCaution::blocksIncrease).forEach(x -> out.add(x.german()));
         }
-        return false;
+        return String.join("; ", out);
     }
 
     /** Zug kennzeichnen; er wird zugleich „unbestätigt“. @return true, wenn die Kennzeichnung neu ist */

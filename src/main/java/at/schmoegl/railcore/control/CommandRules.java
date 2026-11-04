@@ -38,7 +38,7 @@ final class CommandRules {
     String increaseBlocked(int address, int step, Direction direction, int sentStep, Direction sentDirection) {
         if (step == 0 || !plant.increaseBlocked(address)) return null;
         if (sentDirection != null && direction == sentDirection && step <= sentStep) return null;   // Bremsen/Halten
-        return "Zug gekennzeichnet: " + TrainCaution.POWER_FAULT.german() + " – nur Bremsen und Halten erlaubt";
+        return "Zug gekennzeichnet (" + plant.increaseBlockingCautions(address) + ") – nur Bremsen und Halten erlaubt";
     }
 
     /** @return Grund, warum Gleisspannung ein bzw. Weichen stellen gesperrt ist, oder null */

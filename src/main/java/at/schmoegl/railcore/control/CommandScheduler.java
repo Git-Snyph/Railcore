@@ -54,7 +54,7 @@ public final class CommandScheduler implements CommandSink {
     private static final double EPS = 1e-9;
     private static final long SECOND = 1_000_000_000L;
 
-    private enum Kind { DRIVE, FUNCTION, TURNOUT, QUERY, DETECTOR_QUERY }
+    private enum Kind { DRIVE, FUNCTION, TURNOUT, QUERY, DETECTOR_QUERY, STATION_REFRESH }
 
     private record Key(Kind kind, int address, int index) {}
 
@@ -69,6 +69,11 @@ public final class CommandScheduler implements CommandSink {
     private record DetectorQuery() {}
 
     private static final DetectorQuery DETECTOR_QUERY_VALUE = new DetectorQuery();
+
+    /** Wert einer Neueinlese-Anforderung an die Zentrale (kein DCC-Paket, Kosten 0). */
+    private record StationRefresh() {}
+
+    private static final StationRefresh STATION_REFRESH_VALUE = new StationRefresh();
 
     /**
      * Zuletzt an die Zentrale gesendeter Fahrbefehl einer Lok (für die Abweichungsprüfung).
@@ -288,6 +293,14 @@ public final class CommandScheduler implements CommandSink {
                 "Melderabfrage");
     }
 
+    /** Zustände der Zentrale neu einlesen: kein DCC-Paket, Kosten 0; wartende Anforderungen werden zusammengefasst. */
+    @Override
+    public boolean refreshStationState(CommandPriority priority) {
+        guard.check("Neueinlesen planen");
+        requireQueued(priority);
+        return submit(new Key(Kind.STATION_REFRESH, 0, 0), STATION_REFRESH_VALUE, priority, 0, DriveListener.NONE,
+                "Zustände neu einlesen");
+    }
     /** Gleisspannung ist kein DCC-Paket: ohne Warteschlange, sofort. */
     @Override
     public boolean trackPower(boolean on) {
@@ -761,6 +774,16 @@ public final class CommandScheduler implements CommandSink {
                     return;
                 }
                 station.requestLocoState(s.key.address());
+                markSent(p, q, now);
+            }
+            case StationRefresh q -> {
+                String why = linkDown ? "Verbindung nicht hergestellt" : rules.queryBlocked();
+                if (why != null) {
+                    countDropped();
+                    journal.debug("befehle", "COMMAND_DROPPED", "Neueinlesen entfällt: " + why);
+                    return;
+                }
+                station.refreshState();
                 markSent(p, q, now);
             }
             case DetectorQuery q -> {

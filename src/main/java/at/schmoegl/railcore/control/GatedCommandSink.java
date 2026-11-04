@@ -72,6 +72,14 @@ final class GatedCommandSink implements CommandSink {
     }
 
     @Override
+    public boolean refreshStationState(CommandPriority priority) {
+        guard.check("Zustände neu einlesen");
+        String why = rules.queryBlocked();
+        if (why != null) return reject("Zustände neu einlesen", why);
+        return target.refreshStationState(priority);
+    }
+
+    @Override
     public boolean trackPower(boolean on) {
         guard.check("Gleisspannung");
         if (on) {

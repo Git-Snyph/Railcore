@@ -14,15 +14,21 @@ public enum TrainCaution {
      * Die Zentrale meldet für die Lok einen anderen Fahrbefehl als den gesendeten (Fremdsteuerung der echten Adresse,
      * verlorener Befehl): erlaubter Wert wurde erneut gesendet, der Zug fährt mit größerem Sicherheitsabstand.
      */
-    FOREIGN_CONTROL;
+    FOREIGN_CONTROL,
+    /**
+     * Handregler und RailCore wechseln sich bei derselben Lok ab (mehrere Abweichungen in kurzer Zeit, Entscheidung
+     * 37): Halt gesendet, der Bediener entscheidet. Bis dahin darf der Zug nicht anfahren.
+     */
+    CONFLICTING_CONTROL;
 
     /** Sperrt diese Kennzeichnung Anfahren und Beschleunigen? */
-    public boolean blocksIncrease() { return this == POWER_FAULT; }
+    public boolean blocksIncrease() { return this == POWER_FAULT || this == CONFLICTING_CONTROL; }
 
     public String german() {
         return switch (this) {
             case POWER_FAULT -> "Position unsicher (Kurzschluss/Spannungsausfall im Bezirk)";
             case FOREIGN_CONTROL -> "größerer Sicherheitsabstand (Lok fuhr anders als gesendet)";
+            case CONFLICTING_CONTROL -> "gehalten: Handregler und RailCore steuern abwechselnd – Bediener entscheidet";
         };
     }
 }

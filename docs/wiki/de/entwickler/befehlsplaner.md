@@ -16,7 +16,8 @@ Nothalt > Sicherheit > Automatik > Fahrplan > Hand > Komfort (`CommandPriority`)
 | Funktionen, Komfort | Komfort |
 | Lokzustands-Abfrage (Handregler auf Stellvertreter-Adressen) | Hand, Kosten 0 |
 | Melderabfrage (Melderüberwachung, nur wenn die Zentrale sie erkennbar kann) | Sicherheit, Kosten 0 |
-| Erneutes Senden des erlaubten Werts, wenn die Zentrale für eine Lok etwas anderes meldet | Sicherheit |
+| Erneutes Senden des erlaubten Werts, wenn die Zentrale für eine Lok etwas anderes meldet; nach 3 Abweichungen in 10 s Halt | Sicherheit |
+| Zustände neu einlesen nach Wiederverbindung ohne Neuverbinden (`refreshStationState`) | Sicherheit, Kosten 0 |
 
 Innerhalb einer Klasse: Halt vor Absenkung vor Erhöhung, dann älteste zuerst. In der Sicherheitsklasse stehen echte Sicherheitsbefehle vor aufgestuften Bremsstufen.
 
