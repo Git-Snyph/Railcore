@@ -1,6 +1,6 @@
 ---
 name: railcore-kern
-description: Für sicherheitsrelevante Kernlogik von RailCore einsetzen – alles unter safety/, train/ und z21/, Reservierungen, Fahrstraßen, Positionsberechnung, Bremskurven, Befehlsplaner, Watchdog, Wiederanlauf und das Z21-Prüfprogramm. Proaktiv verwenden, sobald eine Aufgabe diese Bereiche ändert oder entwirft.
+description: Für sicherheitsrelevante Kernlogik von RailCore einsetzen – alles unter safety/, train/ und z21/, Reservierungen, Fahrstraßen, Positionsberechnung, Bremskurven, Befehlsplaner, Watchdog, Wiederanlauf und das Z21-Prüfprogramm. Proaktiv verwenden, sobald eine Aufgabe diese Bereiche ändert oder entwirft. Nicht für Aufgaben mit Zugriff auf echte Hardware – diese gehören in die Hauptsitzung.
 model: opus
 ---
 
