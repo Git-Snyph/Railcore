@@ -8,7 +8,7 @@ Jeder Meilenstein endet mit einem eigenständig testbaren Ergebnis; der nächste
 | --- | --- | --- | --- |
 | 1 | Kern und Sicherheitsbasis *(in Arbeit)* | Z21-Prüfprogramm an echter Hardware, Ereignisbus, Befehlswarteschlange, zentraler Executor, Watchdog, Simulator | offene Hardware-Fragen geklärt; jede Störung im Simulator führt zur festgelegten Reaktion |
 | 2 | Gleisplan und Position | Gleisgraph, Meldeabschnitte, Blöcke, Melde- und Haltepunkte, wegbasierte Position mit Abgleich | simulierte Position bleibt innerhalb des Unsicherheitsbands |
-| 3 | Datenbank und Einmessen | SQLite, MobaDB-Import, Zugverbände, Loks einmessen, Anlage vermessen, Decoder-Werkstatt | echte Lok eingemessen, Haltefehler höchstens 20 mm |
+| 3 | Datenbank und Einmessen | SQLite, MobaDB-Import, Zugverbände, Loks einmessen, Anlage vermessen, Decoder-Werkstatt | echte Lok eingemessen, 95 % der Bahnsteighalte innerhalb ±10 mm |
 | 4 | Fahrmanagement | Reservierung, Verriegelung, Flankenschutz, Durchrutschweg, Bremskurve, Wiederanlauf | zwei Züge auf der echten Anlage, nie im selben Abschnitt |
 | 5 | Oberfläche | Live-Gleisbild, Gleisplan-Editor, Stellpulte, Diagnoseansicht, Verkabelungsebene | Anlage vollständig im Editor erfasst und live dargestellt |
 | 6 | Vollautomatik | Prioritäten, Überholen, Deadlock-Erkennung, Schattenbahnhof mit Nachrücken, Signale, WLAN-Maus | 24 h Simulator-Dauerlauf mit 100 Zügen ohne Konflikt |

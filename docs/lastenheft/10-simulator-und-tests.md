@@ -16,7 +16,7 @@ Der Simulator ist ein vollwertiger Adapter: Er bildet Zentrale, Booster, Melder,
 
 | Bereich | Kriterium |
 | --- | --- |
-| Positionsgenauigkeit | Haltefehler ≤ 20 mm bei eingemessenem Zug, Abweichung beim Abgleich ≤ Unsicherheitsband |
+| Positionsgenauigkeit | 95 % der Halte an Bahnsteig-Haltepunkten innerhalb ±10 mm bei eingemessenem Zug, sofern die für den Haltepunkt berechnete Genauigkeit ±10 mm erlaubt; an allen anderen Haltepunkten innerhalb der dort berechneten Genauigkeit (Nothalt und ungeplante Halte ausgenommen), Abweichung beim Abgleich ≤ Unsicherheitsband |
 | Sicherheit | jeder Fehler aus dem Fehlerkatalog führt im Simulator zur festgelegten Reaktion; kein Test darf zwei Züge im selben Abschnitt erzeugen |
 | Dauerlauf | 100 Züge, 24 h simulierte Betriebszeit, kein Deadlock, keine Kollision, keine Speicherzunahme |
 | Reaktionszeit | gemessene Zielwerte mit Perzentilen (z. B. Melderereignis bis Fahrbefehl: 95 % unter 50 ms; Nothalt: 99 % unter 20 ms nach Erkennung), dokumentiert je Version; keine Echtzeitgarantie unter Windows und Java |

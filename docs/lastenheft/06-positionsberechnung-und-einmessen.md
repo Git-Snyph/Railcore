@@ -49,4 +49,17 @@ Eingemessen wird das Grundverhalten der Lok (Geschwindigkeit je Fahrstufe, Reakt
 
 **Bremskurve:** Aus Ziel (Haltepunkt, Ende der Freigabe, Langsamfahrstelle), Unsicherheit und Bremsprofil folgt laufend die höchste zulässige Geschwindigkeit an der aktuellen Stelle. Unterschreitet der Abstand den Bremsweg, wird gebremst; der Zug hält am Haltepunkt, ohne eigenen Brems- oder Haltemelder.
 
+**Zielgenaues Halten:** Zwei Arten von Halt mit unterschiedlicher Bremsweise:
+
+| Halt | Bremsweise | Genauigkeit |
+| --- | --- | --- |
+| Bahnsteig-Haltepunkt (Bahnhof) | zweistufig: Bremskurve auf ein **Annäherungstempo** (Standard 5 km/h Vorbild, je Zugprofil einstellbar), die letzte Strecke (Standard 50–100 mm, je Haltepunkt einstellbar) im Annäherungstempo, dann Halt | Ziel ±10 mm |
+| Halt auf der Strecke (z. B. vor Halt zeigendem Signal, Ende der Freigabe) | normal: eine Bremskurve bis zum Stillstand | Halt mit Sicherheitsabstand vor dem Ziel, gesichert durch Durchrutschweg |
+
+- Es wird **nicht** angenommen, wie viele Melder ein Block hat oder welcher Melder vor einem Haltepunkt liegt. Die Steuerung berechnet für jeden Haltepunkt die erreichbare Genauigkeit aus dem Abstand zum letzten Meldepunkt davor (Positionsunsicherheit wächst mit der Strecke seit dem Abgleich), der gemessenen Melderverzögerung und dem Tempo beim Überfahren.
+- RailCore Studio zeigt die erwartete Genauigkeit je Haltepunkt an und gibt einen Hinweis, wenn ±10 mm nicht erreichbar sind (z. B. „erwartet ±17 mm – Meldepunkt näher am Haltepunkt würde helfen“). Der Halt funktioniert trotzdem, nur weniger genau.
+- Beim Einmessen zusätzlich gemessen: Ansprechverzögerung der Melder je Abschnitt und Auslaufweg je Lok aus dem Annäherungstempo.
+- Brems- und Haltebefehle werden auf den vorausberechneten Zeitpunkt eingeplant, nicht erst beim nächsten Rechentakt.
+- Nothalt und ungeplante Halte bremsen bewusst auf kürzestem Weg und sind von der Genauigkeitsvorgabe ausgenommen.
+
 **Anlage vermessen:** Ein eingemessener Zug fährt mit konstanter Fahrstufe über die Anlage; aus den Zeiten zwischen den Meldepunkten ergeben sich Abschnitts- und Blocklängen. Manuell gemessen werden muss nur die Messstrecke.
