@@ -43,7 +43,7 @@ Der Z21-Adapter spricht die Z21 über `z21.Z21Link` (UDP); in Tests ersetzt eine
 | `control` | Verdrahtung (`ControlRuntime`), Steuerungs-Executor, Handregler-Abfrage, Anlagenzustand und Momentaufnahme, Executor-Watchdog, Freigabe (`MovementAuthority`), Befehlsplaner (`CommandScheduler`, siehe [Befehlsplaner](befehlsplaner.md)), Zugsteuerung (`TrainDriver`) |
 | `train` | Fahrdynamik, Bremskurve, Positionsrechnung und -unsicherheit, Halteplanung |
 | `layout` | Gleisplan-Modell: Blöcke, Ausgänge, Licht, Laden aus Datei |
-| `layout.graph` | Gleisgraph (Schritte B1, B2): Gleisstückbibliothek mit Geometrie, daraus berechnete Knoten und Kanten in mm, Ort, Fahrweg, Weichenlagen als Eingabe; Auflagen (Meldeabschnitte, Blöcke, Punkte, Signale, Bezirke) und Gleisplan-Prüfung (`TrackLayout`) |
+| `layout.graph` | Gleisgraph (Schritte B1–B3): Gleisstückbibliothek mit Geometrie, daraus berechnete Knoten und Kanten in mm, Ort, Fahrweg, Weichenlagen als Eingabe; Auflagen (Meldeabschnitte, Blöcke, Punkte, Signale, Bezirke) und Gleisplan-Prüfung (`TrackLayout`); Gleisplan-Datei (JSON, vorläufig) und Lader (`TrackPlanLoader`) |
 | `safety` | Betriebszustand, Melderzustand (unbekannt/frei/belegt), Melderfilter, Kommunikations-Watchdog |
 | `diag` | Journal |
 | `sim` | Simulator: Welt, Loks mit abweichenden „wahren“ Profilen, Melder, simulierte Zentrale |
@@ -51,7 +51,7 @@ Der Z21-Adapter spricht die Z21 über `z21.Z21Link` (UDP); in Tests ersetzt eine
 
 ## Gleisgraph: `layout.graph`
 
-Grundmodell nach Lastenheft Kapitel 4 und Entscheidung 40 (E2, E3, E10). Reines, unveränderliches Java-Modell ohne Zustand; noch ohne Datei, Lader und Anbindung an Steuerung oder Positionsrechnung (folgt in B3–B4 und C).
+Grundmodell nach Lastenheft Kapitel 4 und Entscheidung 40 (E2, E3, E10). Reines, unveränderliches Java-Modell ohne Zustand; Datei und Lader seit B3, noch ohne Anbindung an Steuerung oder Positionsrechnung (folgt in B4 und C).
 
 - **Gleisstückbibliothek** (`TrackPiece`, `TrackPieceCatalog`): gerade Stücke und Bögen (`TrackGeometry`: Länge bzw. Radius und Winkel, auch zusammengesetzt), Weiche, Kreuzung, Doppelkreuzungsweiche. Im Code stehen keine Herstellermaße. Bei Weichen, Doppelkreuzungsweichen und Kreuzungen liefert der Typ nur einen Vorschlag; maßgeblich sind die Werte je verlegtem Stück (Entscheidungen 41, 42). Gerade Stücke und Bögen dürfen beim Verlegen eine eigene Länge bekommen, die den Typwert überschreibt (vorläufig, Entscheidung 42).
 - **Graph** (`TrackGraph.Builder`): verlegte Stücke werden über ihre Anschlüsse verbunden (Stoß, Trennstelle, Gleisende); Knoten und Kanten samt Längen berechnet der Builder. Offene Anschlüsse und andere Fehler werden gesammelt gemeldet (`TrackGraphException`).
@@ -69,6 +69,17 @@ Grundmodell nach Lastenheft Kapitel 4 und Entscheidung 40 (E2, E3, E10). Reines,
 - **Prüfung** (`findings()`, `LayoutFinding` mit Art und Schweregrad): Der Bau wirft bei inhaltlichen Fehlern keine Ausnahme, damit der ganze Bericht angezeigt werden kann; jeder Fehler sperrt die Automatik (`permitsAutomatic()`), Hinweise werden nur angezeigt. Fehler: Block ohne Melder, überlappende Abschnitte oder Bezirke, doppelte Kontakte, Adressen oder Kennungen, unbekannte Verweise, ungültige Lagen, Kehrschleife ohne Kehrschleifenbezirk, Abschnitt in zwei Blöcken, Blockgeometrie, Haltebereich nicht zusammenhängend. Hinweise: weniger als 3 Abschnitte je Block (einstellbar), unbekannte Länge, Gleis ohne Melder, Gleis ohne Bezirk, Weiche ohne Belegtabschnitt, Sackgasse ohne Ausweg, unerreichbarer Knoten, Block ohne Ausfahrt, DKW mit ungeprüfter Stelllogik.
 - **Kehrschleife:** Polaritätsprüfung über alle Übergänge des Graphs (erkennt auch Gleisdreiecke); aufgelöst nur durch Gleis, das ganz in einem Kehrschleifenbezirk liegt. Trennstellen zählen nicht als Auflösung.
 - **Indizes** enthalten nur gültige Angaben (bei doppelten Kennungen gilt die erste): Abschnitt → Block, Bezirk → Abschnitte, Kontakt → Abschnitt, Ort → Abschnitte/Blöcke/Bezirke, Signal → Lage.
+
+### Gleisplan-Datei und Lader (Schritt B3)
+
+> Status: Entwurf – Format vorläufig (Entscheidung 35), Version 1; bis Meilenstein 3 maßgeblich, danach Austauschformat neben SQLite.
+
+- **Modell** `TrackPlan`: genau der Inhalt der Datei (Katalog, verlegte Stücke mit Instanzwerten, Verbindungen, Auflagen). Graph und Gleisplan sind daraus berechnet und lassen sich nicht verlustfrei zurückschreiben, das Modell schon (`TrackPlanJson.write`, `parse(write(p)).equals(p)`).
+- **Aufbau** (Schlüssel englisch, Werte von Aufzählungen wie im Code, z. B. `STRAIGHT`, `A_TO_B`): `formatVersion` (Pflicht), `name`, `recommendedSectionsPerBlock`, `catalog` (Typen: `plain` mit `geometry` `straight`/`arc`/`compound`, `turnout`, `crossing`, `doubleSlip` mit Stelllogik und `hardwareVerified`), `pieces` (Kennung, `type`, Instanzwerte je Art: `lengthMm` bei Gerade/Bogen, `turnout` + `branches` bei der Weiche, `dimensions` bei der Kreuzung, `turnoutA`/`turnoutB` + `routeLengthsMm` + `clearancesMm` bei der DKW; bei jedem Stück `lengthUnknown`, Entscheidung 43 Punkt 2), `connections` (`joint`, `isolating`, `end` mit Anschlüssen als `"stück.ANSCHLUSS"`), `sections`, `blocks`, `holdingAreas`, `districts` (mit `reversingLoop`), `signals`, `points` (`stop`, `speed`, `report` = überschriebener Meldepunkt), `turnoutAddresses`. Orte als `{"edge", "offsetMm", "forward"}`; Bereiche als `{"edge", "fromMm", "toMm"}` oder kurz als Kantenkennung für die ganze Kante. Kanten heißen wie im `TrackGraph.Builder` (z. B. `w.STRAIGHT`, `d.A1_B2`).
+- **Streng:** unbekannte Felder, doppelte Schlüssel, falsche Typen, nicht ganze Zahlen, wo ganze verlangt sind, und eine andere Formatversion sind Fehler, damit ein Tippfehler nie stillschweigend einen Standardwert ergibt. Erlaubte Richtungen eines Blocks sind Pflicht.
+- **Lader** `TrackPlanLoader`: drei Stufen – Datei lesen und prüfen (Syntax, Format, Verweise auf Katalog, Stücke, Anschlüsse), Graph bauen, Gleisplan bauen und prüfen. Ergebnis ist immer ein gemeinsamer Bericht `TrackPlanReport` mit Ladefehlern (`Phase` FILE, SYNTAX, FORMAT, REFERENCE, GRAPH, mit Fundstelle wie `pieces[3] (w1).branches`) und den Prüfbefunden; Automatik nur ohne Ladefehler und ohne Prüf-Fehler. Verweise auf Kanten, Abschnitte und Blöcke prüft `TrackLayout`, weil Kanten erst mit dem Graph entstehen.
+- **Synthetische Testanlagen** unter `src/test/resources/anlagen/`: Oval, Bahnhof mit Weichen und DKW, Schattenbahnhof mit Weichenharfe, Kehrschleife mit und ohne Kehrschleifenbezirk.
+- Noch nicht enthalten: Lage in der Ebene und Schließprüfung der Geometrie, Fahrstraßen, Anbindung an Steuerung und Simulator (B4).
 
 ## Geplant
 
