@@ -1,0 +1,76 @@
+// Synthetische Testanlage „Oval“ (Schritt B3): zwei Geraden zu je drei Stücken, zwei Halbkreise aus je vier
+// 45°-Bögen. Zwei Blöcke (Nord, Süd) mit je vier Meldeabschnitten, Trennstellen an den Blockgrenzen.
+// Alle Maße sind synthetische Testwerte, keine Herstellermaße.
+{
+  "formatVersion": 1,
+  "name": "Oval",
+  "recommendedSectionsPerBlock": 3,
+  "catalog": [
+    {"id": "SYN-G1000", "kind": "plain", "geometry": {"kind": "straight", "lengthMm": 1000}},
+    {"id": "SYN-R500-45", "kind": "plain", "geometry": {"kind": "arc", "radiusMm": 500, "angleDeg": 45}}
+  ],
+  "pieces": [
+    {"id": "n1", "type": "SYN-G1000"},
+    {"id": "n2", "type": "SYN-G1000"},
+    {"id": "n3", "type": "SYN-G1000"},
+    {"id": "c1", "type": "SYN-R500-45"},
+    {"id": "c2", "type": "SYN-R500-45"},
+    {"id": "c3", "type": "SYN-R500-45"},
+    {"id": "c4", "type": "SYN-R500-45"},
+    {"id": "s1", "type": "SYN-G1000"},
+    {"id": "s2", "type": "SYN-G1000"},
+    {"id": "s3", "type": "SYN-G1000"},
+    {"id": "c5", "type": "SYN-R500-45"},
+    {"id": "c6", "type": "SYN-R500-45"},
+    {"id": "c7", "type": "SYN-R500-45"},
+    {"id": "c8", "type": "SYN-R500-45"}
+  ],
+  "connections": [
+    {"kind": "joint", "a": "n1.B", "b": "n2.A"},
+    {"kind": "joint", "a": "n2.B", "b": "n3.A"},
+    {"kind": "joint", "a": "n3.B", "b": "c1.A"},
+    {"kind": "joint", "a": "c1.B", "b": "c2.A"},
+    {"kind": "joint", "a": "c2.B", "b": "c3.A"},
+    {"kind": "joint", "a": "c3.B", "b": "c4.A"},
+    {"kind": "isolating", "a": "c4.B", "b": "s1.A"},
+    {"kind": "joint", "a": "s1.B", "b": "s2.A"},
+    {"kind": "joint", "a": "s2.B", "b": "s3.A"},
+    {"kind": "joint", "a": "s3.B", "b": "c5.A"},
+    {"kind": "joint", "a": "c5.B", "b": "c6.A"},
+    {"kind": "joint", "a": "c6.B", "b": "c7.A"},
+    {"kind": "joint", "a": "c7.B", "b": "c8.A"},
+    {"kind": "isolating", "a": "c8.B", "b": "n1.A"}
+  ],
+  "sections": [
+    {"id": "sn1", "contact": 1, "district": 1, "responseDelayMs": 50, "releaseDelayMs": 500, "ranges": ["n1"]},
+    {"id": "sn2", "contact": 2, "district": 1, "responseDelayMs": 50, "releaseDelayMs": 500, "ranges": ["n2"]},
+    {"id": "sn3", "contact": 3, "district": 1, "responseDelayMs": 50, "releaseDelayMs": 500, "ranges": ["n3"]},
+    {"id": "snk", "contact": 4, "district": 1, "responseDelayMs": 50, "releaseDelayMs": 500, "ranges": ["c1", "c2", "c3", "c4"]},
+    {"id": "ss1", "contact": 5, "district": 1, "responseDelayMs": 50, "releaseDelayMs": 500, "ranges": ["s1"]},
+    {"id": "ss2", "contact": 6, "district": 1, "responseDelayMs": 50, "releaseDelayMs": 500, "ranges": ["s2"]},
+    {"id": "ss3", "contact": 7, "district": 1, "responseDelayMs": 50, "releaseDelayMs": 500, "ranges": ["s3"]},
+    {"id": "ssk", "contact": 8, "district": 1, "responseDelayMs": 50, "releaseDelayMs": 500, "ranges": ["c5", "c6", "c7", "c8"]}
+  ],
+  "blocks": [
+    {"id": "Nord", "sections": ["sn1", "sn2", "sn3", "snk"], "endA": {"edge": "n1", "offsetMm": 0, "forward": true},
+     "directions": ["A_TO_B", "B_TO_A"]},
+    {"id": "Sued", "sections": ["ss1", "ss2", "ss3", "ssk"], "endA": {"edge": "s1", "offsetMm": 0, "forward": true},
+     "directions": ["A_TO_B", "B_TO_A"]}
+  ],
+  "holdingAreas": [],
+  "districts": [
+    {"id": 1, "name": "Hauptbezirk", "reversingLoop": false}
+  ],
+  "signals": [
+    {"id": "sigNordB", "block": "Nord", "end": "B", "addresses": [10]},
+    {"id": "sigNordA", "block": "Nord", "end": "A", "addresses": [11]},
+    {"id": "sigSuedB", "block": "Sued", "end": "B", "addresses": [12]},
+    {"id": "sigSuedA", "block": "Sued", "end": "A", "addresses": [13]}
+  ],
+  "points": [
+    {"kind": "stop", "id": "hNord", "at": {"edge": "n2", "offsetMm": 500, "forward": true}},
+    {"kind": "stop", "id": "hNordGegen", "at": {"edge": "n2", "offsetMm": 500, "forward": false}},
+    {"kind": "speed", "id": "vSued", "at": {"edge": "s1", "offsetMm": 0, "forward": true}, "speedKmh": 80, "reference": "TAIL"}
+  ],
+  "turnoutAddresses": []
+}

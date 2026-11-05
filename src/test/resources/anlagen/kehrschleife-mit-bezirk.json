@@ -1,0 +1,76 @@
+// Synthetische Testanlage „Kehrschleife mit Kehrschleifenbezirk“ (Schritt B3): Stumpfgleis g1–g3 mit Prellbock,
+// Weiche W, Schleife l1 – c1…c7 – l2 zurück zum Abzweig von W. Die ganze Schleife liegt in Bezirk 2, der als
+// Kehrschleifenbezirk gekennzeichnet ist (Kehrschleifenmodul) – die Prüfung meldet nichts.
+// Gegenstück: kehrschleife-ohne-bezirk.json (gleiches Gleis, Bezirk 2 ohne Kennzeichen).
+// Alle Maße sind synthetische Testwerte, keine Herstellermaße.
+{
+  "formatVersion": 1,
+  "name": "Kehrschleife mit Kehrschleifenbezirk",
+  "recommendedSectionsPerBlock": 3,
+  "catalog": [
+    {"id": "SYN-G1000", "kind": "plain", "geometry": {"kind": "straight", "lengthMm": 1000}},
+    {"id": "SYN-R500-45", "kind": "plain", "geometry": {"kind": "arc", "radiusMm": 500, "angleDeg": 45}},
+    {"id": "SYN-W", "kind": "turnout", "hand": "LEFT",
+     "suggestion": {"straightLengthMm": 200, "divergingLengthMm": 204.7, "straightClearanceMm": 150, "divergingClearanceMm": 250}}
+  ],
+  "pieces": [
+    {"id": "g1", "type": "SYN-G1000"},
+    {"id": "g2", "type": "SYN-G1000"},
+    {"id": "g3", "type": "SYN-G1000"},
+    {"id": "W", "type": "SYN-W", "turnout": "W",
+     "branches": {"straightLengthMm": 200, "divergingLengthMm": 204.7, "straightClearanceMm": 150, "divergingClearanceMm": 250}},
+    {"id": "l1", "type": "SYN-G1000"},
+    {"id": "c1", "type": "SYN-R500-45"},
+    {"id": "c2", "type": "SYN-R500-45"},
+    {"id": "c3", "type": "SYN-R500-45"},
+    {"id": "c4", "type": "SYN-R500-45"},
+    {"id": "c5", "type": "SYN-R500-45"},
+    {"id": "c6", "type": "SYN-R500-45"},
+    {"id": "c7", "type": "SYN-R500-45"},
+    {"id": "l2", "type": "SYN-G1000"}
+  ],
+  "connections": [
+    {"kind": "end", "a": "g1.A"},
+    {"kind": "joint", "a": "g1.B", "b": "g2.A"},
+    {"kind": "joint", "a": "g2.B", "b": "g3.A"},
+    {"kind": "joint", "a": "g3.B", "b": "W.TIP"},
+    {"kind": "isolating", "a": "W.STRAIGHT", "b": "l1.A"},
+    {"kind": "joint", "a": "l1.B", "b": "c1.A"},
+    {"kind": "joint", "a": "c1.B", "b": "c2.A"},
+    {"kind": "joint", "a": "c2.B", "b": "c3.A"},
+    {"kind": "joint", "a": "c3.B", "b": "c4.A"},
+    {"kind": "joint", "a": "c4.B", "b": "c5.A"},
+    {"kind": "joint", "a": "c5.B", "b": "c6.A"},
+    {"kind": "joint", "a": "c6.B", "b": "c7.A"},
+    {"kind": "joint", "a": "c7.B", "b": "l2.A"},
+    {"kind": "isolating", "a": "l2.B", "b": "W.DIVERGING"}
+  ],
+  "sections": [
+    {"id": "sg1", "contact": 1, "district": 1, "responseDelayMs": 50, "releaseDelayMs": 500, "ranges": ["g1"]},
+    {"id": "sg2", "contact": 2, "district": 1, "responseDelayMs": 50, "releaseDelayMs": 500, "ranges": ["g2"]},
+    {"id": "sg3", "contact": 3, "district": 1, "responseDelayMs": 50, "releaseDelayMs": 500, "ranges": ["g3"]},
+    {"id": "sW", "contact": 4, "district": 1, "responseDelayMs": 50, "releaseDelayMs": 500, "ranges": ["W.STRAIGHT", "W.DIVERGING"]},
+    {"id": "sl1", "contact": 5, "district": 2, "responseDelayMs": 50, "releaseDelayMs": 500, "ranges": ["l1"]},
+    {"id": "slc", "contact": 6, "district": 2, "responseDelayMs": 50, "releaseDelayMs": 500,
+     "ranges": ["c1", "c2", "c3", "c4", "c5", "c6", "c7"]},
+    {"id": "sl2", "contact": 7, "district": 2, "responseDelayMs": 50, "releaseDelayMs": 500, "ranges": ["l2"]}
+  ],
+  "blocks": [
+    {"id": "Stamm", "sections": ["sg1", "sg2", "sg3"], "endA": {"edge": "g1", "offsetMm": 0, "forward": true},
+     "directions": ["A_TO_B", "B_TO_A"]},
+    {"id": "Schleife", "sections": ["sl1", "slc", "sl2"], "endA": {"edge": "l1", "offsetMm": 0, "forward": true},
+     "directions": ["A_TO_B", "B_TO_A"]}
+  ],
+  "holdingAreas": [],
+  "districts": [
+    {"id": 1, "name": "Hauptbezirk", "reversingLoop": false},
+    {"id": 2, "name": "Kehrschleife", "reversingLoop": true}
+  ],
+  "signals": [
+    {"id": "S1", "block": "Stamm", "end": "B", "addresses": [20]}
+  ],
+  "points": [],
+  "turnoutAddresses": [
+    {"turnout": "W", "address": 1}
+  ]
+}

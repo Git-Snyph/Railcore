@@ -11,12 +11,24 @@ import java.util.Map;
  */
 public final class Json {
     private final String s;
+    private final boolean rejectDuplicateKeys;
     private int i;
 
-    private Json(String s) { this.s = s; }
+    private Json(String s, boolean rejectDuplicateKeys) {
+        this.s = s;
+        this.rejectDuplicateKeys = rejectDuplicateKeys;
+    }
 
-    public static Object parse(String text) {
-        Json j = new Json(text);
+    public static Object parse(String text) { return parse(text, false); }
+
+    /**
+     * Wie {@link #parse(String)}; mit {@code rejectDuplicateKeys} ist ein doppelter Schlüssel im selben Objekt ein
+     * Fehler, statt dass stillschweigend der letzte Wert gilt (für Dateien, bei denen ein Tippfehler nicht unbemerkt
+     * bleiben darf, z. B. der Gleisplan).
+     */
+    public static Object parse(String text, boolean rejectDuplicateKeys) {
+        if (text == null) throw new IllegalArgumentException("JSON-Fehler: kein Text");
+        Json j = new Json(text, rejectDuplicateKeys);
         j.ws();
         Object v = j.value();
         j.ws();
@@ -46,6 +58,7 @@ public final class Json {
             ws();
             String k = string();
             ws(); expect(':'); ws();
+            if (rejectDuplicateKeys && m.containsKey(k)) throw err("Schlüssel \"" + k + "\" doppelt");
             m.put(k, value());
             ws();
             if (peek() == ',') { i++; continue; }
@@ -74,6 +87,7 @@ public final class Json {
             char c = s.charAt(i++);
             if (c == '"') return sb.toString();
             if (c == '\\') {
+                if (i >= s.length()) throw err("Zeichenkette nicht beendet");
                 char e = s.charAt(i++);
                 switch (e) {
                     case 'n' -> sb.append('\n');
@@ -81,7 +95,15 @@ public final class Json {
                     case 'r' -> sb.append('\r');
                     case 'b' -> sb.append('\b');
                     case 'f' -> sb.append('\f');
-                    case 'u' -> { sb.append((char) Integer.parseInt(s.substring(i, i + 4), 16)); i += 4; }
+                    case 'u' -> {
+                        if (i + 4 > s.length()) throw err("Unvollständige \\u-Angabe");
+                        try {
+                            sb.append((char) Integer.parseInt(s.substring(i, i + 4), 16));
+                        } catch (NumberFormatException ex) {
+                            throw err("Ungültige \\u-Angabe");
+                        }
+                        i += 4;
+                    }
                     default -> sb.append(e);
                 }
             } else sb.append(c);
@@ -92,7 +114,11 @@ public final class Json {
         int st = i;
         while (i < s.length() && "+-0123456789.eE".indexOf(s.charAt(i)) >= 0) i++;
         if (st == i) throw err("Wert erwartet");
-        return Double.parseDouble(s.substring(st, i));
+        try {
+            return Double.parseDouble(s.substring(st, i));
+        } catch (NumberFormatException e) {
+            throw err("Ungültige Zahl: " + s.substring(st, i));
+        }
     }
 
     private Object literal(String w, Object v) {
