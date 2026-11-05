@@ -26,7 +26,7 @@ Eingemessen wird das Grundverhalten der Lok (Geschwindigkeit je Fahrstufe, Reakt
 
 **Laufende Nachmessung:** Bei jeder Blockdurchfahrt misst die Steuerung die tatsächliche Geschwindigkeit zwischen den Meldepunkten und pflegt damit Lok-, Zug- und Streckenprofil laufend nach (gleitender Mittelwert, Ausreißer verworfen, jede Änderung protokolliert). Weicht eine Lok dauerhaft ab, meldet die Steuerung „neu einmessen oder warten“.
 
-**Einmessen mit externem Messgerät:** Zusätzlich zur Messstrecke mit 10808-Meldern wird ein Adapter für externe Geschwindigkeitsmessgeräte vorgesehen, zuerst für die RZ Speedbox 2. Deren Schnittstelle (USB, Bluetooth, Datenformat) ist noch zu klären; benötigt wird die Anleitung bzw. Herstellerangabe.
+**Einmessen mit externem Messgerät:** Ein Adapter für externe Geschwindigkeitsmessgeräte zusätzlich zur Messstrecke mit 10808-Meldern ist vorgesehen, aber zurückgestellt. Erster Kandidat wäre die RZTec Speedbox II (nur USB/seriell, Protokoll nicht öffentlich dokumentiert); ohne Protokollbeschreibung vom Hersteller wird nichts angebunden (Entscheidung 49).
 
 **Befehlsplaner und DCC-Befehlsbudget:** Die Z21 wiederholt Fahr- und Funktionsbefehle selbst auf dem Gleis; die Bandbreite ist für die ganze Anlage begrenzt. Deshalb:
 
