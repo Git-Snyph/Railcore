@@ -17,7 +17,7 @@ Stand: 03.11.2026. Eigene Modellbahn-Steuerung (Java 25), Repository Git-Snyph/R
 ## Anforderungen
 ### Zentralen
 - [x] Z21 über UDP: Fahren, Funktionen F0–F31, Weichen, Gleisspannung, Nothalt
-- [x] R-Bus-Rückmelder
+- [ ] R-Bus-Rückmelder – zurückgestellt, R-Bus wird nicht genutzt (Modulzählung ungeklärt, Z21-Prüfprogramm); CAN-Belegtmelder (10808) sind umgesetzt
 - [x] CAN-Belegtmelder (10808) inkl. RailCom-Lokadressen je Abschnitt
 - [x] CV lesen/schreiben: Programmiergleis, POM Lok, POM Zubehör
 - [x] Schnittstelle für weitere Zentralen (Plugin-fähig)
@@ -64,9 +64,14 @@ Stand: 03.11.2026. Eigene Modellbahn-Steuerung (Java 25), Repository Git-Snyph/R
 - [ ] Offline-Hilfe im Programm aus denselben Quellen, mit dem Installer ausgeliefert; optional Website
 
 ## Meilensteine
-1. Kern: Zentralen-Schnittstelle, Z21, Simulator, Gleisplan-Modell, wegbasierte Position *(in Arbeit)*
-2. Datenbank + Excel-Import, Einmessen, Anlagenvermessung, ZIMO-Modul
-3. Live-Gleisbild, Gleisplan-Editor, Verkabelungsebene
-4. Vollautomatik, Schattenbahnhof, Signale, Aktionen
-5. Fahrpläne, Licht, Drehscheibe, REST/MQTT/Home Assistant
-6. Mobile Apps (iOS/Android)
+Maßgeblich ist die neunteilige Liste in Lastenheft Kapitel 12 (`docs/lastenheft/12-meilensteine.md`); hier nur zur Einordnung:
+
+1. Kern und Sicherheitsbasis: Z21-Prüfprogramm, Ereignisbus, Steuerungs-Executor, Watchdog, Simulator *(in Arbeit)*
+2. Gleisplan und Position: Gleisgraph, Meldeabschnitte, Blöcke, Melde- und Haltepunkte, wegbasierte Position mit Abgleich
+3. Datenbank und Einmessen: SQLite, MobaDB-Import, Zugverbände, Loks einmessen, Anlage vermessen, Decoder-Werkstatt
+4. Fahrmanagement: Reservierung, Verriegelung, Flankenschutz, Durchrutschweg, Bremskurve, Wiederanlauf
+5. Oberfläche: Live-Gleisbild, Gleisplan-Editor, Stellpulte, Diagnoseansicht, Verkabelungsebene
+6. Vollautomatik: Prioritäten, Überholen, Deadlock-Erkennung, Schattenbahnhof mit Nachrücken, Signale, WLAN-Maus
+7. Betrieb: Fahrpläne, Rangieren, Drehscheibe, Licht, Aktionen, Betriebsprotokoll
+8. Schnittstellen: REST, MQTT mit Home-Assistant-Discovery, Anmeldung und TLS
+9. Mobile Apps: iOS und Android
