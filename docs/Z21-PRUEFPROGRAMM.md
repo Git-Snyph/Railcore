@@ -61,8 +61,8 @@ Jeder Eingriff wird im Klartext angekündigt und nur nach der Eingabe `JA` (Gro�
 - Hängen die beiden 10807 über CAN oder B-Bus an der Z21? Kommen 0xCA-Meldungen an (nächster passiver Lauf)?
 - Welche NetworkID gehört zu welchem Booster, welcher Ausgang zu welchem Bezirk (ZS1/ZS2)? Grundlage für die Quelle der Bezirksmeldung (Entscheidung 40/E7).
 - Booster-Firmware (ab 1.11 für einzelnes Schalten je Ausgang); stimmen Spannung, Strom und Zustandsbits mit der Wartungs-App überein?
-- Einzelschalten (0xCB) erst nach eigener Freigabe durch den Nutzer und nur in Stufe 2 mit „JA“; noch nicht gebaut. Grundsätzlich gilt: Ein abgeschalteter Ausgang lässt Züge stehen, ist aber kein Nothalt-Ersatz, und weil die Abschaltung nicht gespeichert wird, darf RailCore nach einem Neustart von Booster, Z21 oder RailCore nie annehmen, dass ein Ausgang noch aus ist (Grundsatz 5).
-- zLink/pro LINK (Temperatur): nur, falls ein pro LINK an einem Booster steckt; eigener Kanal neben der Z21, Architekturfrage.
+- Einzelschalten (0xCB) erst nach eigener Freigabe durch den Nutzer und nur in Stufe 2 mit „JA“; noch nicht gebaut, Richtung aber bestätigt (Entscheidung 49) – wird umgesetzt, sobald Firmware-Voraussetzungen (Z21 ≥ 1.42, Booster ≥ 1.11) an der Hardware geprüft sind. Grundsätzlich gilt: Ein abgeschalteter Ausgang lässt Züge stehen, ist aber kein Nothalt-Ersatz, und weil die Abschaltung nicht gespeichert wird, darf RailCore nach einem Neustart von Booster, Z21 oder RailCore nie annehmen, dass ein Ausgang noch aus ist (Grundsatz 5).
+- zLink/pro LINK (Temperatur): nur, falls ein pro LINK an einem Booster steckt; eigener Kanal neben der Z21, für Diagnosezwecke bestätigt (Entscheidung 49), noch nicht gebaut – zunächst nur lesend.
 
 ### RZTec Speedbox II (externes Messgerät zum Einmessen, Lastenheft Kap. 6)
 
@@ -73,7 +73,7 @@ Jeder Eingriff wird im Klartext angekündigt und nur nach der Eingabe `JA` (Gro�
 - Angebunden in TrainController Gold (ab 9), Win-Digipet (ab 2018-1) und iTrain (ab 5) jeweils als eigene Schnittstelle mit COM-Port – also **kein Teil der Zentrale**, sondern ein eigenes Gerät neben ihr.
 - **Das serielle Protokoll (Baudrate, Befehle, Meldungsformat) ist nicht öffentlich dokumentiert**, weder in der Anleitung noch auf der Download-Seite. Bekannt aus der Anleitung ist nur, dass die Box sich beim Verbinden mit „PCBox“ meldet.
 
-**Offen:** Protokollbeschreibung beim Hersteller anfragen (info@rztec.de); ohne sie wird nichts angebunden (kein Mitschneiden und Nachbauen fremder Protokolle als Grundlage für Messwerte). Für RailCore wäre die Speedbox kein `CommandStation`-Adapter, sondern ein eigener Messgeräte-Adapter (nur lesend, kein Befehl an Loks), dessen Werte ausschließlich in das Einmessen fließen. Ob sie angebunden wird, entscheidet der Nutzer.
+**Auf Eis gelegt (Entscheidung 49):** Ohne Protokollbeschreibung vom Hersteller (info@rztec.de) wird nichts angebunden (kein Mitschneiden und Nachbauen fremder Protokolle als Grundlage für Messwerte). Für RailCore wäre die Speedbox kein `CommandStation`-Adapter, sondern ein eigener Messgeräte-Adapter (nur lesend, kein Befehl an Loks), dessen Werte ausschließlich in das Einmessen fließen würden.
 
 Details und Rohdaten je Lauf siehe unten.
 
