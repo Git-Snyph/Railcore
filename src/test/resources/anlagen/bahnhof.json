@@ -3,11 +3,14 @@
 // zum Ausziehgleis führt (beide mit Prellbock); Ostkopf: Weiche W2. Ringstrecke Ost – Gegengerade – West.
 // Gleis 2 ist wegen der DKW gekürzt (eigene Länge an g2c). Die DKW-Stelllogik ist die vorläufige Annahme und
 // ausdrücklich nicht an der Hardware geprüft (Entscheidung 41).
+// Angaben ab Formatversion 2 (Entscheidung 46): Spurweite H0 für die Anlage, Ausziehgleis als Mehrschienengleis
+// H0/H0m, Gleis 1 mit und Ladegleis ohne Oberleitung, Bahnsteigseiten, Wende- und Halteverbot auf der Strecke Ost.
 // Alle Maße sind synthetische Testwerte, keine Herstellermaße.
 {
-  "formatVersion": 1,
+  "formatVersion": 2,
   "name": "Bahnhof mit Weichen",
   "recommendedSectionsPerBlock": 3,
+  "gaugeMm": 16.5,
   "catalog": [
     {"id": "SYN-G1000", "kind": "plain", "geometry": {"kind": "straight", "lengthMm": 1000}},
     {"id": "SYN-G500", "kind": "plain", "geometry": {"kind": "straight", "lengthMm": 500}},
@@ -38,24 +41,25 @@
     {"id": "k8", "type": "SYN-R500-45"},
     {"id": "zw", "type": "SYN-G1000"},
     {"id": "W1", "type": "SYN-W", "turnout": "W1",
-     "branches": {"straightLengthMm": 200, "divergingLengthMm": 204.7, "straightClearanceMm": 150, "divergingClearanceMm": 250}},
+     "branches": {"straightLengthMm": 200, "divergingLengthMm": 204.7, "straightClearanceMm": 150, "divergingClearanceMm": 250},
+     "catenary": "PRESENT"},
     {"id": "W2", "type": "SYN-W", "turnout": "W2",
      "branches": {"straightLengthMm": 200, "divergingLengthMm": 204.7, "straightClearanceMm": 150, "divergingClearanceMm": 250}},
     {"id": "D1", "type": "SYN-DKW", "turnoutA": "D1a", "turnoutB": "D1b",
      "routeLengthsMm": {"A1_B1": 231, "A1_B2": 236.5, "A2_B1": 236.5, "A2_B2": 231},
-     "clearancesMm": {"A1": 100, "A2": 100, "B1": 110, "B2": 110}},
-    {"id": "g1a", "type": "SYN-G1000"},
-    {"id": "g1b", "type": "SYN-G1000"},
-    {"id": "g1c", "type": "SYN-G1000"},
+     "clearancesMm": {"A1": 100, "A2": 100, "B1": 110, "B2": 110}, "catenary": "ABSENT", "gaugesMm": [12, 16.5]},
+    {"id": "g1a", "type": "SYN-G1000", "catenary": "PRESENT"},
+    {"id": "g1b", "type": "SYN-G1000", "catenary": "PRESENT"},
+    {"id": "g1c", "type": "SYN-G1000", "catenary": "PRESENT"},
     {"id": "g2a", "type": "SYN-G1000"},
     {"id": "g2b", "type": "SYN-G1000"},
     {"id": "g2c", "type": "SYN-G1000", "lengthMm": 769},
-    {"id": "l1", "type": "SYN-G500"},
-    {"id": "l2", "type": "SYN-G500"},
-    {"id": "l3", "type": "SYN-G500"},
-    {"id": "a1", "type": "SYN-G500"},
-    {"id": "a2", "type": "SYN-G500"},
-    {"id": "a3", "type": "SYN-G500"}
+    {"id": "l1", "type": "SYN-G500", "catenary": "ABSENT"},
+    {"id": "l2", "type": "SYN-G500", "catenary": "ABSENT"},
+    {"id": "l3", "type": "SYN-G500", "catenary": "ABSENT"},
+    {"id": "a1", "type": "SYN-G500", "gaugesMm": [12, 16.5]},
+    {"id": "a2", "type": "SYN-G500", "gaugesMm": [12, 16.5]},
+    {"id": "a3", "type": "SYN-G500", "gaugesMm": [12, 16.5]}
   ],
   "connections": [
     {"kind": "joint", "a": "zw.B", "b": "W1.TIP"},
@@ -121,19 +125,19 @@
   ],
   "blocks": [
     {"id": "Ost", "sections": ["sOst1", "sOst2", "sOst3"], "endA": {"edge": "zo", "offsetMm": 0, "forward": true},
-     "directions": ["A_TO_B", "B_TO_A"]},
+     "directions": ["A_TO_B", "B_TO_A"], "noReversing": ["A_TO_B", "B_TO_A"], "noStopping": ["B_TO_A"]},
     {"id": "Gegengerade", "sections": ["sGeg1", "sGeg2", "sGeg3"], "endA": {"edge": "m1", "offsetMm": 0, "forward": true},
      "directions": ["A_TO_B", "B_TO_A"]},
     {"id": "West", "sections": ["sWest1", "sWest2", "sWest3"], "endA": {"edge": "k5", "offsetMm": 0, "forward": true},
      "directions": ["A_TO_B", "B_TO_A"]},
     {"id": "Gleis1", "sections": ["sG1a", "sG1b", "sG1c"], "endA": {"edge": "g1a", "offsetMm": 0, "forward": true},
-     "directions": ["A_TO_B", "B_TO_A"]},
+     "directions": ["A_TO_B", "B_TO_A"], "platformSide": "RIGHT"},
     {"id": "Gleis2", "sections": ["sG2a", "sG2b", "sG2c"], "endA": {"edge": "g2a", "offsetMm": 0, "forward": true},
-     "directions": ["A_TO_B", "B_TO_A"], "maxTrainLengthMm": 2500},
+     "directions": ["A_TO_B", "B_TO_A"], "maxTrainLengthMm": 2500, "platformSide": "BOTH"},
     {"id": "Ladegleis", "sections": ["sL1", "sL2", "sL3"], "endA": {"edge": "l1", "offsetMm": 0, "forward": true},
      "directions": ["A_TO_B", "B_TO_A"], "trainTypes": ["Güterzug"], "maxTrainLengthMm": 1400},
     {"id": "Auszieh", "sections": ["sA1", "sA2", "sA3"], "endA": {"edge": "a1", "offsetMm": 0, "forward": true},
-     "directions": ["A_TO_B", "B_TO_A"]}
+     "directions": ["A_TO_B", "B_TO_A"], "platformSide": "NONE"}
   ],
   "holdingAreas": [
     {"id": "Bahnsteig1", "blocks": ["Gleis1"]},
@@ -153,7 +157,7 @@
   "points": [
     {"kind": "stop", "id": "hG1", "at": {"edge": "g1b", "offsetMm": 500, "forward": true}},
     {"kind": "stop", "id": "hG1kurz", "at": {"edge": "g1b", "offsetMm": 300, "forward": false},
-     "trainTypes": ["Personenzug"], "maxTrainLengthMm": 1200},
+     "trainTypes": ["Personenzug"], "maxTrainLengthMm": 1200, "platformSide": "LEFT"},
     {"kind": "speed", "id": "vEinfahrt", "at": {"edge": "zw", "offsetMm": 0, "forward": true}, "speedKmh": 40,
      "reference": "HEAD"},
     {"kind": "report", "section": "sG1a", "boundary": {"edge": "g1a", "offsetMm": 0, "forward": true},

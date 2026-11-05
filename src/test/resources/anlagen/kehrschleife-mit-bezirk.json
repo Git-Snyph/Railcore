@@ -4,7 +4,7 @@
 // Gegenstück: kehrschleife-ohne-bezirk.json (gleiches Gleis, Bezirk 2 ohne Kennzeichen).
 // Alle Maße sind synthetische Testwerte, keine Herstellermaße.
 {
-  "formatVersion": 1,
+  "formatVersion": 2,
   "name": "Kehrschleife mit Kehrschleifenbezirk",
   "recommendedSectionsPerBlock": 3,
   "catalog": [

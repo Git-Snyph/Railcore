@@ -4,7 +4,7 @@
 // Kehrschleifenbezirk“ melden (Schritt B2, Entscheidung 43 Punkt 1); Automatik gesperrt.
 // Alle Maße sind synthetische Testwerte, keine Herstellermaße.
 {
-  "formatVersion": 1,
+  "formatVersion": 2,
   "name": "Kehrschleife ohne Kehrschleifenbezirk",
   "recommendedSectionsPerBlock": 3,
   "catalog": [

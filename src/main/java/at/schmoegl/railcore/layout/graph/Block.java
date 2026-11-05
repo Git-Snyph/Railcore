@@ -12,15 +12,23 @@ import java.util.Set;
  * „A → B“ ist (die Richtung zeigt in den Block hinein). Daraus berechnet {@link TrackLayout} die Ausrichtung auf
  * allen Kanten des Blocks und die Lage von Ende B (bei einer Weiche im Block auch mehrere Enden).
  *
- * @param sectionIds      Meldeabschnitte von Ende A zu Ende B (für einen Block mit Automatik mindestens einer,
- *                        empfohlen drei)
- * @param directions      erlaubte Fahrtrichtungen, mindestens eine
- * @param trainTypes      zugelassene Zugarten; leer = alle
+ * <p>Wende- und Halteverbot sowie Bahnsteigseite (Entscheidung 46, Option A) sind reine Angaben für die spätere
+ * Gleiswahl (Meilenstein 4). Ein Halteverbot betrifft nur geplante Halte; ein Halt aus Sicherheitsgründen ist immer
+ * erlaubt (Grundsatz „im Zweifel halt“, Entscheidung 40/E6).
+ *
+ * @param sectionIds       Meldeabschnitte von Ende A zu Ende B (für einen Block mit Automatik mindestens einer,
+ *                         empfohlen drei)
+ * @param directions       erlaubte Fahrtrichtungen, mindestens eine
+ * @param trainTypes       zugelassene Zugarten; leer = alle
  * @param minTrainLengthMm Mindestzuglänge in mm (0 = keine)
  * @param maxTrainLengthMm Höchstzuglänge in mm ({@link Double#POSITIVE_INFINITY} = keine)
+ * @param noReversing      Fahrtrichtungen, in denen ein hier eingefahrener Zug nicht wenden darf; leer = kein Verbot
+ * @param noStopping       Fahrtrichtungen, in denen ein Zug hier nicht planmäßig halten darf; leer = kein Verbot
+ * @param platformSide     Bahnsteigseite in Richtung A → B ({@link PlatformSide#UNSPECIFIED} = keine Angabe)
  */
 public record Block(String id, List<String> sectionIds, DirectedLocation endA, Set<Direction> directions,
-                    Set<String> trainTypes, double minTrainLengthMm, double maxTrainLengthMm) {
+                    Set<String> trainTypes, double minTrainLengthMm, double maxTrainLengthMm,
+                    Set<Direction> noReversing, Set<Direction> noStopping, PlatformSide platformSide) {
 
     /** Fahrtrichtung bezogen auf die Blockenden. */
     public enum Direction {
@@ -47,6 +55,16 @@ public record Block(String id, List<String> sectionIds, DirectedLocation endA, S
         LayoutIds.requireLength(maxTrainLengthMm, "Block " + id + ": Höchstzuglänge");
         if (minTrainLengthMm > maxTrainLengthMm)
             throw new IllegalArgumentException("Block " + id + ": Mindestzuglänge größer als Höchstzuglänge");
+        noReversing = noReversing == null ? Set.of() : Set.copyOf(noReversing);
+        noStopping = noStopping == null ? Set.of() : Set.copyOf(noStopping);
+        if (platformSide == null) platformSide = PlatformSide.UNSPECIFIED;
+    }
+
+    /** Block ohne Wende- und Halteverbot und ohne Angabe zur Bahnsteigseite. */
+    public Block(String id, List<String> sectionIds, DirectedLocation endA, Set<Direction> directions,
+                 Set<String> trainTypes, double minTrainLengthMm, double maxTrainLengthMm) {
+        this(id, sectionIds, endA, directions, trainTypes, minTrainLengthMm, maxTrainLengthMm, Set.of(), Set.of(),
+                PlatformSide.UNSPECIFIED);
     }
 
     /** Block in beiden Richtungen, ohne Einschränkung nach Zugart und -länge. */
@@ -57,13 +75,26 @@ public record Block(String id, List<String> sectionIds, DirectedLocation endA, S
 
     public boolean allows(Direction d) { return directions.contains(d); }
 
+    /** Ob ein in Richtung {@code d} eingefahrener Zug hier wenden darf (nur die Angabe, keine Fahrwegprüfung). */
+    public boolean reversingAllowed(Direction d) { return !noReversing.contains(d); }
+
+    /** Ob ein Zug in Richtung {@code d} hier planmäßig halten darf (Sicherheitshalte sind immer erlaubt). */
+    public boolean stoppingAllowed(Direction d) { return !noStopping.contains(d); }
+
+    /** Bahnsteigseite, gesehen in Fahrtrichtung {@code d}. */
+    public PlatformSide platformSide(Direction d) {
+        return d == Direction.A_TO_B ? platformSide : platformSide.mirrored();
+    }
+
     /** Derselbe Block mit anderen erlaubten Richtungen. */
     public Block withDirections(Set<Direction> allowed) {
-        return new Block(id, sectionIds, endA, allowed, trainTypes, minTrainLengthMm, maxTrainLengthMm);
+        return new Block(id, sectionIds, endA, allowed, trainTypes, minTrainLengthMm, maxTrainLengthMm, noReversing,
+                noStopping, platformSide);
     }
 
     /** Derselbe Block mit anderen Meldeabschnitten. */
     public Block withSections(String... ids) {
-        return new Block(id, List.of(ids), endA, directions, trainTypes, minTrainLengthMm, maxTrainLengthMm);
+        return new Block(id, List.of(ids), endA, directions, trainTypes, minTrainLengthMm, maxTrainLengthMm,
+                noReversing, noStopping, platformSide);
     }
 }

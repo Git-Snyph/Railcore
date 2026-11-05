@@ -39,8 +39,14 @@ import java.util.function.Supplier;
  * {@code src/test/resources/anlagen/}.
  *
  * <p>Streng, weil ein Tippfehler sonst stillschweigend einen Standardwert ergäbe (im Zweifel halt): unbekannte
- * Felder, doppelte Schlüssel, falsche Typen, nicht ganze Zahlen, wo ganze verlangt sind, und eine andere
- * Formatversion sind Fehler. Alle Fehler werden gesammelt und gemeinsam gemeldet ({@link TrackPlanException}).
+ * Felder, doppelte Schlüssel, falsche Typen, nicht ganze Zahlen, wo ganze verlangt sind, unbekannte
+ * Aufzählungswerte und eine nicht unterstützte Formatversion sind Fehler. Alle Fehler werden gesammelt und gemeinsam
+ * gemeldet ({@link TrackPlanException}).
+ *
+ * <p>Version 1 wird weiter gelesen und auf Version {@value TrackPlan#FORMAT_VERSION} gehoben; die Felder ab
+ * Version 2 (Spurweite {@code gaugeMm}/{@code gaugesMm}, Oberleitung {@code catenary}, Wende-/Halteverbot
+ * {@code noReversing}/{@code noStopping}, Bahnsteigseite {@code platformSide}, Entscheidung 46) sind dort unbekannt.
+ * Sie sind alle optional; fehlen sie, gilt „keine Angabe“ ohne Einschränkung.
  *
  * <p>Schreiben ist verlustfrei: {@code parse(write(p)).equals(p)}. Optionale Angaben mit Standardwert werden
  * weggelassen; Sicherheitsangaben (erlaubte Richtungen, {@code reversingLoop}, {@code hardwareVerified}) und alle
@@ -50,6 +56,9 @@ import java.util.function.Supplier;
 public final class TrackPlanJson {
 
     private TrackPlanJson() {}
+
+    /** Felder jedes verlegten Stücks ab Formatversion 2 (Entscheidung 46, Option A). */
+    private static final String[] PIECE_V2_KEYS = {"gaugesMm", "catenary"};
 
     // ============================================================================================================
     // Lesen
@@ -231,15 +240,18 @@ public final class TrackPlanJson {
             }
             int version = root.integer("formatVersion");
             if (!problems.isEmpty()) return null;
-            if (version != TrackPlan.FORMAT_VERSION) {
+            if (version < TrackPlan.OLDEST_READABLE_VERSION || version > TrackPlan.FORMAT_VERSION) {
                 problem("Datei.formatVersion", "Formatversion " + version + " wird nicht unterstützt (erwartet "
-                        + TrackPlan.FORMAT_VERSION + ")");
+                        + TrackPlan.OLDEST_READABLE_VERSION + " bis " + TrackPlan.FORMAT_VERSION + ")");
                 return null;
             }
-            root.allow("formatVersion", "name", "recommendedSectionsPerBlock", "catalog", "pieces", "connections",
-                    "sections", "blocks", "holdingAreas", "districts", "signals", "points", "turnoutAddresses");
+            fileVersion = version;
+            root.allow(keys(new String[] {"formatVersion", "name", "recommendedSectionsPerBlock", "catalog", "pieces",
+                    "connections", "sections", "blocks", "holdingAreas", "districts", "signals", "points",
+                    "turnoutAddresses"}, "gaugeMm"));
             String name = root.optStr("name", "");
             int recommended = root.optInt("recommendedSectionsPerBlock").orElse(TrackPlan.DEFAULT_SECTIONS_PER_BLOCK);
+            OptionalDouble gauge = root.optNum("gaugeMm");
 
             List<TrackPiece> catalog = new ArrayList<>();
             for (Obj o : elements(root.arr("catalog"), "catalog")) {
@@ -270,11 +282,65 @@ public final class TrackPlanJson {
             for (Obj o : elements(root.optArr("turnoutAddresses"), "turnoutAddresses")) add(addresses, turnoutAddress(o));
 
             int before = 0; // nur bauen, wenn bis hier alles fehlerfrei ist
-            return build("Datei", before, () -> new TrackPlan(version, name, catalog, pieces, connections, sections,
-                    blocks, holdingAreas, districts, signals, stops, speeds, reports, addresses, recommended));
+            // ältere Version: beim Lesen auf die aktuelle gehoben (die neuen Felder fehlen dort und haben Standardwerte)
+            return build("Datei", before, () -> new TrackPlan(TrackPlan.FORMAT_VERSION, name, catalog, pieces,
+                    connections, sections, blocks, holdingAreas, districts, signals, stops, speeds, reports, addresses,
+                    recommended, gauge));
         }
 
         static <T> void add(List<T> list, T value) { if (value != null) list.add(value); }
+
+        /** Formatversion der gelesenen Datei. */
+        int fileVersion = TrackPlan.FORMAT_VERSION;
+
+        /**
+         * Erlaubte Felder: {@code base} immer, {@code sinceV2} erst ab Formatversion 2 – in einer Datei der Version 1
+         * sind sie unbekannt, damit eine als Version 1 gekennzeichnete Datei nicht stillschweigend neue Angaben trägt.
+         */
+        String[] keys(String[] base, String... sinceV2) {
+            if (fileVersion < 2) return base;
+            String[] all = Arrays.copyOf(base, base.length + sinceV2.length);
+            System.arraycopy(sinceV2, 0, all, base.length, sinceV2.length);
+            return all;
+        }
+
+        /** Optionaler Aufzählungswert; fehlt das Feld, gilt {@code def}. */
+        <E extends Enum<E>> E optEnum(Obj o, String k, Class<E> type, E def) {
+            if (!o.has(k)) return def;
+            E e = o.enumValue(k, type);
+            return e == null ? def : e;
+        }
+
+        /** Optionale Liste von Blockrichtungen; doppelte Einträge zählen einmal (wie {@code directions}). */
+        Set<Block.Direction> directionList(Obj o, String k, boolean required) {
+            Set<Block.Direction> out = EnumSet.noneOf(Block.Direction.class);
+            List<String> names = o.strings(k, required);
+            for (int i = 0; i < names.size(); i++) {
+                Block.Direction d = parseEnum(o.field(k) + "[" + i + "]", names.get(i), Block.Direction.class);
+                if (d != null) out.add(d);
+            }
+            return out;
+        }
+
+        /** Spurweite und Oberleitung eines verlegten Stücks (Felder ab Version 2, beide optional). */
+        TrackPlan.PieceProperties pieceProperties(Obj o) {
+            int before = problems.size();
+            List<Double> gauges = new ArrayList<>();
+            if (o.has("gaugesMm")) {
+                List<Object> raw = o.arr("gaugesMm");
+                if (raw.isEmpty() && problems.size() == before)
+                    problem(o.field("gaugesMm"), "mindestens eine Spurweite nötig (Feld weglassen = Spurweite der Anlage)");
+                for (int i = 0; i < raw.size(); i++) {
+                    String where = o.field("gaugesMm") + "[" + i + "]";
+                    if (!(raw.get(i) instanceof Double d) || !Double.isFinite(d))
+                        problem(where, "endliche Zahl erwartet, gefunden: " + Json.write(raw.get(i)));
+                    else if (gauges.contains(d)) problem(where, "Spurweite " + Json.write(d) + " doppelt");
+                    else gauges.add(d);
+                }
+            }
+            Catenary catenary = optEnum(o, "catenary", Catenary.class, Catenary.UNSPECIFIED);
+            return build(o.path, before, () -> new TrackPlan.PieceProperties(Set.copyOf(gauges), catenary));
+        }
 
         // --- Katalog --------------------------------------------------------------------------------------------
 
@@ -431,28 +497,32 @@ public final class TrackPlanJson {
             }
             switch (t) {
                 case TrackPiece.PlainPiece _ -> {
-                    o.allow("id", "type", "lengthMm", "lengthUnknown");
+                    o.allow(keys(new String[] {"id", "type", "lengthMm", "lengthUnknown"}, PIECE_V2_KEYS));
                     OptionalDouble length = o.optNum("lengthMm");
                     boolean unknown = o.optBool("lengthUnknown", false);
-                    return build(o.path, before, () -> new PlainPlacement(id, type, length, unknown));
+                    TrackPlan.PieceProperties props = pieceProperties(o);
+                    return build(o.path, before, () -> new PlainPlacement(id, type, length, unknown, props));
                 }
                 case TrackPiece.TurnoutPiece _ -> {
-                    o.allow("id", "type", "turnout", "branches", "lengthUnknown");
+                    o.allow(keys(new String[] {"id", "type", "turnout", "branches", "lengthUnknown"}, PIECE_V2_KEYS));
                     String turnout = o.str("turnout");
                     Obj b = o.obj("branches");
                     TurnoutBranches br = b == null ? null : branches(b);
                     boolean unknown = o.optBool("lengthUnknown", false);
-                    return build(o.path, before, () -> new TurnoutPlacement(id, type, turnout, br, unknown));
+                    TrackPlan.PieceProperties props = pieceProperties(o);
+                    return build(o.path, before, () -> new TurnoutPlacement(id, type, turnout, br, unknown, props));
                 }
                 case TrackPiece.CrossingPiece _ -> {
-                    o.allow("id", "type", "dimensions", "lengthUnknown");
+                    o.allow(keys(new String[] {"id", "type", "dimensions", "lengthUnknown"}, PIECE_V2_KEYS));
                     Obj d = o.obj("dimensions");
                     TrackPiece.CrossingDimensions dims = d == null ? null : crossing(d);
                     boolean unknown = o.optBool("lengthUnknown", false);
-                    return build(o.path, before, () -> new CrossingPlacement(id, type, dims, unknown));
+                    TrackPlan.PieceProperties props = pieceProperties(o);
+                    return build(o.path, before, () -> new CrossingPlacement(id, type, dims, unknown, props));
                 }
                 case TrackPiece.DoubleSlipPiece _ -> {
-                    o.allow("id", "type", "turnoutA", "turnoutB", "routeLengthsMm", "clearancesMm", "lengthUnknown");
+                    o.allow(keys(new String[] {"id", "type", "turnoutA", "turnoutB", "routeLengthsMm", "clearancesMm",
+                            "lengthUnknown"}, PIECE_V2_KEYS));
                     String ta = o.str("turnoutA");
                     String tb = o.str("turnoutB");
                     Obj l = o.obj("routeLengthsMm");
@@ -460,7 +530,8 @@ public final class TrackPlanJson {
                     Obj c = o.obj("clearancesMm");
                     DoubleSlipClearances cl = c == null ? null : slipClearances(c);
                     boolean unknown = o.optBool("lengthUnknown", false);
-                    return build(o.path, before, () -> new DoubleSlipPlacement(id, type, ta, tb, lengths, cl, unknown));
+                    TrackPlan.PieceProperties props = pieceProperties(o);
+                    return build(o.path, before, () -> new DoubleSlipPlacement(id, type, ta, tb, lengths, cl, unknown, props));
                 }
             }
         }
@@ -549,20 +620,20 @@ public final class TrackPlanJson {
 
         Block block(Obj o) {
             int before = problems.size();
-            o.allow("id", "sections", "endA", "directions", "trainTypes", "minTrainLengthMm", "maxTrainLengthMm");
+            o.allow(keys(new String[] {"id", "sections", "endA", "directions", "trainTypes", "minTrainLengthMm",
+                    "maxTrainLengthMm"}, "noReversing", "noStopping", "platformSide"));
             String id = o.str("id");
             List<String> sections = o.strings("sections", true);
             DirectedLocation endA = location(o, "endA");
-            Set<Block.Direction> directions = EnumSet.noneOf(Block.Direction.class);
-            List<String> dirNames = o.strings("directions", true);
-            for (int i = 0; i < dirNames.size(); i++) {
-                Block.Direction d = parseEnum(o.field("directions") + "[" + i + "]", dirNames.get(i), Block.Direction.class);
-                if (d != null) directions.add(d);
-            }
+            Set<Block.Direction> directions = directionList(o, "directions", true);
             Set<String> trainTypes = new LinkedHashSet<>(o.strings("trainTypes", false));
             double min = o.optNum("minTrainLengthMm").orElse(0);
             double max = o.optNum("maxTrainLengthMm").orElse(Double.POSITIVE_INFINITY);
-            return build(o.path, before, () -> new Block(id, sections, endA, directions, trainTypes, min, max));
+            Set<Block.Direction> noReversing = directionList(o, "noReversing", false);
+            Set<Block.Direction> noStopping = directionList(o, "noStopping", false);
+            PlatformSide side = optEnum(o, "platformSide", PlatformSide.class, PlatformSide.UNSPECIFIED);
+            return build(o.path, before, () -> new Block(id, sections, endA, directions, trainTypes, min, max,
+                    noReversing, noStopping, side));
         }
 
         HoldingArea holdingArea(Obj o) {
@@ -604,12 +675,13 @@ public final class TrackPlanJson {
             String kind = o.str("kind");
             switch (kind) {
                 case "stop" -> {
-                    o.allow("kind", "id", "at", "trainTypes", "maxTrainLengthMm");
+                    o.allow(keys(new String[] {"kind", "id", "at", "trainTypes", "maxTrainLengthMm"}, "platformSide"));
                     String id = o.str("id");
                     DirectedLocation at = location(o, "at");
                     Set<String> types = new LinkedHashSet<>(o.strings("trainTypes", false));
                     double max = o.optNum("maxTrainLengthMm").orElse(Double.POSITIVE_INFINITY);
-                    add(stops, build(o.path, before, () -> new StopPoint(id, at, types, max)));
+                    PlatformSide side = optEnum(o, "platformSide", PlatformSide.class, PlatformSide.UNSPECIFIED);
+                    add(stops, build(o.path, before, () -> new StopPoint(id, at, types, max, side)));
                 }
                 case "speed" -> {
                     o.allow("kind", "id", "at", "speedKmh", "reference");
@@ -653,6 +725,7 @@ public final class TrackPlanJson {
         root.put("formatVersion", p.formatVersion());
         if (!p.name().isEmpty()) root.put("name", p.name());
         root.put("recommendedSectionsPerBlock", p.recommendedSectionsPerBlock());
+        if (p.gaugeMm().isPresent()) root.put("gaugeMm", p.gaugeMm().getAsDouble());
         root.put("catalog", map(p.catalog(), TrackPlanJson::catalogEntry));
         root.put("pieces", map(p.pieces(), TrackPlanJson::piece));
         root.put("connections", map(p.connections(), TrackPlanJson::connection));
@@ -753,6 +826,9 @@ public final class TrackPlanJson {
             }
         }
         if (p.lengthUnknown()) m.put("lengthUnknown", true);
+        TrackPlan.PieceProperties props = p.properties();
+        if (!props.gaugesMm().isEmpty()) m.put("gaugesMm", new ArrayList<Object>(props.sortedGaugesMm()));
+        if (props.catenary() != Catenary.UNSPECIFIED) m.put("catenary", props.catenary().name());
         return m;
     }
 
@@ -783,13 +859,21 @@ public final class TrackPlanJson {
 
     private static Object block(Block b) {
         Map<String, Object> m = obj("id", b.id(), "sections", b.sectionIds(), "endA", location(b.endA()));
-        List<Object> dirs = new ArrayList<>();
-        for (Block.Direction d : Block.Direction.values()) if (b.allows(d)) dirs.add(d.name());
-        m.put("directions", dirs);
+        m.put("directions", directions(b.directions()));
         if (!b.trainTypes().isEmpty()) m.put("trainTypes", new ArrayList<Object>(new TreeSet<>(b.trainTypes())));
         if (b.minTrainLengthMm() > 0) m.put("minTrainLengthMm", b.minTrainLengthMm());
         if (Double.isFinite(b.maxTrainLengthMm())) m.put("maxTrainLengthMm", b.maxTrainLengthMm());
+        if (!b.noReversing().isEmpty()) m.put("noReversing", directions(b.noReversing()));
+        if (!b.noStopping().isEmpty()) m.put("noStopping", directions(b.noStopping()));
+        if (b.platformSide() != PlatformSide.UNSPECIFIED) m.put("platformSide", b.platformSide().name());
         return m;
+    }
+
+    /** Richtungen in fester Reihenfolge der Aufzählung. */
+    private static List<Object> directions(Set<Block.Direction> set) {
+        List<Object> out = new ArrayList<>();
+        for (Block.Direction d : Block.Direction.values()) if (set.contains(d)) out.add(d.name());
+        return out;
     }
 
     private static Object district(PlanDistrict d) {
@@ -810,6 +894,7 @@ public final class TrackPlanJson {
         Map<String, Object> m = obj("kind", "stop", "id", s.id(), "at", location(s.at()));
         if (!s.trainTypes().isEmpty()) m.put("trainTypes", new ArrayList<Object>(new TreeSet<>(s.trainTypes())));
         if (Double.isFinite(s.maxTrainLengthMm())) m.put("maxTrainLengthMm", s.maxTrainLengthMm());
+        if (s.platformSide() != PlatformSide.UNSPECIFIED) m.put("platformSide", s.platformSide().name());
         return m;
     }
 }

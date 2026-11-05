@@ -13,6 +13,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 import java.util.OptionalDouble;
 import java.util.Set;
 
@@ -65,7 +66,12 @@ public class TrackPlanTest {
 
     /** Kleinste gültige Datei: ein gerades Stück zwischen zwei Gleisenden; {@code extra} kommt auf oberster Ebene dazu. */
     private static String minimal(String extra) {
-        return j("{'formatVersion': 1, 'catalog': [{'id': 'G', 'kind': 'plain', 'geometry': {'kind': 'straight', 'lengthMm': 1000}}],"
+        return minimal(TrackPlan.FORMAT_VERSION, extra);
+    }
+
+    /** Wie {@link #minimal(String)}, mit gegebener Formatversion. */
+    private static String minimal(int version, String extra) {
+        return j("{'formatVersion': " + version + ", 'catalog': [{'id': 'G', 'kind': 'plain', 'geometry': {'kind': 'straight', 'lengthMm': 1000}}],"
                 + " 'pieces': [{'id': 'p', 'type': 'G'}], 'connections': [{'kind': 'end', 'a': 'p.A'}, {'kind': 'end', 'a': 'p.B'}]"
                 + (extra.isEmpty() ? "" : ", " + extra) + "}");
     }
@@ -240,7 +246,8 @@ public class TrackPlanTest {
 
     public void testFormatVersionRequiredAndChecked() {
         single(loadErrors(j("{'catalog': []}")), Phase.FORMAT, "formatVersion", "fehlt");
-        single(loadErrors(j("{'formatVersion': 2}")), Phase.FORMAT, "Formatversion 2 wird nicht unterstützt");
+        single(loadErrors(j("{'formatVersion': 3}")), Phase.FORMAT, "Formatversion 3 wird nicht unterstützt", "1 bis 2");
+        single(loadErrors(j("{'formatVersion': 0}")), Phase.FORMAT, "Formatversion 0 wird nicht unterstützt");
         single(loadErrors(j("[1, 2]")), Phase.FORMAT, "Objekt erwartet");
     }
 
@@ -359,7 +366,7 @@ public class TrackPlanTest {
         TrackPlan mismatch = new TrackPlan(1, "", good.catalog(),
                 List.of(new TrackPlan.CrossingPlacement("p", "G", TrackPiece.CrossingDimensions.symmetric(300, 300), false)),
                 good.connections(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(),
-                List.of(), 3);
+                List.of(), 3, OptionalDouble.empty());
         single(TrackPlanLoader.build(mismatch).loadErrors(), Phase.REFERENCE, "Typ G passt nicht zur Art des Stücks");
     }
 
@@ -379,5 +386,173 @@ public class TrackPlanTest {
         assertThrows(IllegalArgumentException.class, () -> TrackPlan.PlanRange.of("e", 5, 1));
         assertThrows(IllegalArgumentException.class, () -> new TrackPlan.PlainPlacement("p", "G", OptionalDouble.of(0), false));
         assertEquals(TrackPlan.PlanRange.whole("e"), new TrackPlan.PlanRange("e", true, 3, 4));
+    }
+
+    // --- optionale Angaben ab Formatversion 2 (Entscheidung 46, Option A) ---------------------------------------
+
+    private static TrackPlan.PlacedPiece piece(TrackPlan plan, String id) {
+        return plan.pieces().stream().filter(p -> p.id().equals(id)).findFirst().orElseThrow();
+    }
+
+    public void testStationCarriesOptionalFields() {
+        TrackPlanReport r = load("bahnhof.json");
+        TrackPlan plan = r.plan().orElseThrow();
+        assertEquals(OptionalDouble.of(16.5), plan.gaugeMm());
+        // Spurweite: eigene Angabe überschreibt die der Anlage, mehrere bei Mehrschienengleis
+        assertEquals(Set.of(12.0, 16.5), plan.gaugesMmOf(piece(plan, "a1")));
+        assertEquals(Set.of(12.0, 16.5), plan.gaugesMmOf(piece(plan, "D1")));
+        assertEquals(Set.of(16.5), plan.gaugesMmOf(piece(plan, "zo")));
+        assertEquals(Set.of(), piece(plan, "zo").properties().gaugesMm());
+        // Oberleitung je Stück, jede Stückart
+        assertEquals(Catenary.PRESENT, piece(plan, "g1a").properties().catenary());
+        assertEquals(Catenary.PRESENT, piece(plan, "W1").properties().catenary());
+        assertEquals(Catenary.ABSENT, piece(plan, "D1").properties().catenary());
+        assertEquals(Catenary.ABSENT, piece(plan, "l1").properties().catenary());
+        assertEquals(Catenary.UNSPECIFIED, piece(plan, "W2").properties().catenary());
+        // Block-Angaben kommen unverändert im geprüften Gleisplan an
+        TrackLayout l = r.layout().orElseThrow();
+        Block ost = l.block("Ost").orElseThrow();
+        assertEquals(Set.of(Block.Direction.A_TO_B, Block.Direction.B_TO_A), ost.noReversing());
+        assertTrue(!ost.reversingAllowed(Block.Direction.A_TO_B) && !ost.reversingAllowed(Block.Direction.B_TO_A), "Wendeverbot");
+        assertTrue(ost.stoppingAllowed(Block.Direction.A_TO_B), "Halten A → B erlaubt");
+        assertTrue(!ost.stoppingAllowed(Block.Direction.B_TO_A), "Halteverbot B → A");
+        Block g1 = l.block("Gleis1").orElseThrow();
+        assertEquals(PlatformSide.RIGHT, g1.platformSide());
+        assertEquals(PlatformSide.RIGHT, g1.platformSide(Block.Direction.A_TO_B));
+        assertEquals(PlatformSide.LEFT, g1.platformSide(Block.Direction.B_TO_A));
+        assertTrue(g1.reversingAllowed(Block.Direction.A_TO_B) && g1.stoppingAllowed(Block.Direction.B_TO_A), "ohne Verbot");
+        assertEquals(PlatformSide.BOTH, l.block("Gleis2").orElseThrow().platformSide(Block.Direction.B_TO_A));
+        assertEquals(PlatformSide.NONE, l.block("Auszieh").orElseThrow().platformSide(Block.Direction.B_TO_A));
+        assertEquals(PlatformSide.UNSPECIFIED, l.block("West").orElseThrow().platformSide());
+        StopPoint kurz = plan.stopPoints().stream().filter(s -> s.id().equals("hG1kurz")).findFirst().orElseThrow();
+        assertEquals(PlatformSide.LEFT, kurz.platformSide());
+        assertEquals(PlatformSide.UNSPECIFIED, plan.stopPoints().getFirst().platformSide());
+        // reine Datenhaltung: keine neuen Befunde
+        assertEquals(List.of(Code.DOUBLE_SLIP_LOGIC_UNVERIFIED), codes(r));
+    }
+
+    public void testOptionalFieldsDefaultWhenMissing() {
+        TrackPlan plan = TrackPlanJson.parse(minimal(j("'blocks': [{'id': 'B', 'sections': [],"
+                + " 'endA': {'edge': 'p', 'offsetMm': 0, 'forward': true}, 'directions': ['A_TO_B']}],"
+                + " 'points': [{'kind': 'stop', 'id': 'h', 'at': {'edge': 'p', 'offsetMm': 500, 'forward': true}}]")));
+        assertEquals(OptionalDouble.empty(), plan.gaugeMm());
+        assertEquals(TrackPlan.PieceProperties.NONE, plan.pieces().getFirst().properties());
+        assertEquals(Set.of(), plan.gaugesMmOf(plan.pieces().getFirst()));
+        Block b = plan.blocks().getFirst();
+        assertEquals(Set.of(), b.noReversing());
+        assertEquals(Set.of(), b.noStopping());
+        assertEquals(PlatformSide.UNSPECIFIED, b.platformSide());
+        assertEquals(PlatformSide.UNSPECIFIED, plan.stopPoints().getFirst().platformSide());
+        // Standardwerte werden nicht geschrieben
+        String written = TrackPlanJson.write(plan);
+        for (String k : List.of("gaugeMm", "gaugesMm", "catenary", "noReversing", "noStopping", "platformSide"))
+            assertTrue(!written.contains(k), k + " nicht geschrieben: " + written);
+    }
+
+    public void testOptionalFieldsRoundTrip() {
+        String json = minimal(j("'gaugeMm': 9, 'blocks': [{'id': 'B', 'sections': [],"
+                + " 'endA': {'edge': 'p', 'offsetMm': 0, 'forward': true}, 'directions': ['A_TO_B', 'B_TO_A'],"
+                + " 'noReversing': ['B_TO_A', 'B_TO_A'], 'noStopping': ['B_TO_A', 'A_TO_B'], 'platformSide': 'LEFT'}],"
+                + " 'points': [{'kind': 'stop', 'id': 'h', 'at': {'edge': 'p', 'offsetMm': 500, 'forward': false},"
+                + " 'platformSide': 'BOTH'}]"))
+                .replace("{\"id\": \"p\", \"type\": \"G\"}",
+                        "{\"id\": \"p\", \"type\": \"G\", \"gaugesMm\": [16.5, 9], \"catenary\": \"ABSENT\"}");
+        TrackPlan plan = TrackPlanJson.parse(json);
+        assertEquals(new TrackPlan.PieceProperties(Set.of(9.0, 16.5), Catenary.ABSENT), plan.pieces().getFirst().properties());
+        assertEquals(Set.of(Block.Direction.B_TO_A), plan.blocks().getFirst().noReversing()); // doppelt zählt einmal
+        String written = TrackPlanJson.write(plan);
+        assertEquals(plan, TrackPlanJson.parse(written));
+        assertEquals(written, TrackPlanJson.write(TrackPlanJson.parse(written)));
+        // feste Reihenfolge: Spurweiten aufsteigend, Richtungen wie in der Aufzählung
+        assertTrue(written.contains("\"gaugesMm\": [9, 16.5]"), written);
+        Map<?, ?> tree = (Map<?, ?>) Json.parse(written);
+        assertEquals("BOTH", ((Map<?, ?>) ((List<?>) tree.get("points")).getFirst()).get("platformSide"));
+        assertEquals(List.of("A_TO_B", "B_TO_A"), ((Map<?, ?>) ((List<?>) tree.get("blocks")).getFirst()).get("noStopping"));
+        assertTrue(TrackPlanLoader.build(plan).loaded(), "baut");
+    }
+
+    public void testVersion1StillLoadsAndIsLifted() {
+        // eine Datei der Version 1 lädt weiter und wird beim Lesen auf die aktuelle Version gehoben
+        String v1 = minimal(1, j("'blocks': [{'id': 'B', 'sections': [],"
+                + " 'endA': {'edge': 'p', 'offsetMm': 0, 'forward': true}, 'directions': ['A_TO_B']}]"));
+        TrackPlanReport r = TrackPlanLoader.load(v1);
+        assertTrue(r.loaded(), r.text());
+        TrackPlan plan = r.plan().orElseThrow();
+        assertEquals(TrackPlan.FORMAT_VERSION, plan.formatVersion());
+        assertEquals(PlatformSide.UNSPECIFIED, plan.blocks().getFirst().platformSide());
+        assertEquals(TrackPlan.PieceProperties.NONE, plan.pieces().getFirst().properties());
+        String written = TrackPlanJson.write(plan);
+        assertTrue(written.contains("\"formatVersion\": " + TrackPlan.FORMAT_VERSION + ","), written);
+        assertEquals(plan, TrackPlanJson.parse(written));
+        // gleicher Inhalt wie dieselbe Datei als Version 2
+        assertEquals(plan, TrackPlanJson.parse(v1.replace("\"formatVersion\": 1", "\"formatVersion\": 2")));
+    }
+
+    public void testVersion1RejectsNewFields() {
+        // als Version 1 gekennzeichnet, aber mit Angaben ab Version 2: unbekannte Felder (Tippfehler in der Version)
+        single(loadErrors(minimal(1, "\"gaugeMm\": 16.5")), Phase.FORMAT, "Datei", "unbekanntes Feld \"gaugeMm\"");
+        single(loadErrors(minimal(1, "").replace("{\"id\": \"p\", \"type\": \"G\"}",
+                "{\"id\": \"p\", \"type\": \"G\", \"catenary\": \"PRESENT\"}")), Phase.FORMAT, "pieces[0] (p)",
+                "unbekanntes Feld \"catenary\"");
+        single(loadErrors(minimal(1, j("'blocks': [{'id': 'B', 'sections': [], 'endA': {'edge': 'p', 'offsetMm': 0,"
+                + " 'forward': true}, 'directions': ['A_TO_B'], 'noStopping': ['A_TO_B']}]"))), Phase.FORMAT,
+                "blocks[0] (B)", "unbekanntes Feld \"noStopping\"");
+        single(loadErrors(minimal(1, j("'points': [{'kind': 'stop', 'id': 'h', 'at': {'edge': 'p', 'offsetMm': 5,"
+                + " 'forward': true}, 'platformSide': 'LEFT'}]"))), Phase.FORMAT, "points[0] (h)",
+                "unbekanntes Feld \"platformSide\"");
+    }
+
+    private static String withPiece(String fields) {
+        return minimal("").replace("{\"id\": \"p\", \"type\": \"G\"}", "{\"id\": \"p\", \"type\": \"G\", " + j(fields) + "}");
+    }
+
+    private static String withBlock(String fields) {
+        return minimal(j("'blocks': [{'id': 'B', 'sections': [], 'endA': {'edge': 'p', 'offsetMm': 0, 'forward': true},"
+                + " 'directions': ['A_TO_B'], " + fields + "}]"));
+    }
+
+    public void testInvalidOptionalFields() {
+        // unbekannte Aufzählungswerte
+        single(loadErrors(withPiece("'catenary': 'JA'")), Phase.FORMAT, "pieces[0] (p).catenary",
+                "unbekannter Wert \"JA\"", "PRESENT");
+        single(loadErrors(withPiece("'catenary': true")), Phase.FORMAT, "pieces[0] (p).catenary", "Text erwartet");
+        single(loadErrors(withBlock("'platformSide': 'OBEN'")), Phase.FORMAT, "blocks[0] (B).platformSide",
+                "unbekannter Wert \"OBEN\"");
+        single(loadErrors(withBlock("'noReversing': ['VORWAERTS']")), Phase.FORMAT, "blocks[0] (B).noReversing[0]",
+                "unbekannter Wert \"VORWAERTS\"");
+        single(loadErrors(withBlock("'noStopping': 'A_TO_B'")), Phase.FORMAT, "blocks[0] (B).noStopping", "Liste erwartet");
+        single(loadErrors(minimal(j("'points': [{'kind': 'stop', 'id': 'h', 'at': {'edge': 'p', 'offsetMm': 5,"
+                + " 'forward': true}, 'platformSide': 'MITTE'}]"))), Phase.FORMAT, "points[0] (h).platformSide",
+                "unbekannter Wert \"MITTE\"");
+        // Spurweiten
+        single(loadErrors(withPiece("'gaugesMm': []")), Phase.FORMAT, "pieces[0] (p).gaugesMm", "mindestens eine Spurweite");
+        single(loadErrors(withPiece("'gaugesMm': [16.5, 16.5]")), Phase.FORMAT, "pieces[0] (p).gaugesMm[1]", "doppelt");
+        single(loadErrors(withPiece("'gaugesMm': ['H0']")), Phase.FORMAT, "pieces[0] (p).gaugesMm[0]", "endliche Zahl erwartet");
+        single(loadErrors(withPiece("'gaugesMm': [0]")), Phase.FORMAT, "pieces[0] (p)", "Spurweite muss größer 0 sein");
+        single(loadErrors(withPiece("'gaugesMm': 16.5")), Phase.FORMAT, "pieces[0] (p).gaugesMm", "Liste erwartet");
+        single(loadErrors(minimal("\"gaugeMm\": -16.5")), Phase.FORMAT, "Spurweite der Anlage muss größer 0 sein");
+        single(loadErrors(minimal("\"gaugeMm\": \"H0\"")), Phase.FORMAT, "Datei.gaugeMm", "endliche Zahl erwartet");
+    }
+
+    public void testOptionalFieldsModel() {
+        assertEquals(PlatformSide.RIGHT, PlatformSide.LEFT.mirrored());
+        assertEquals(PlatformSide.LEFT, PlatformSide.RIGHT.mirrored());
+        for (PlatformSide s : List.of(PlatformSide.UNSPECIFIED, PlatformSide.NONE, PlatformSide.BOTH))
+            assertEquals(s, s.mirrored());
+        assertThrows(IllegalArgumentException.class, () -> new TrackPlan.PieceProperties(Set.of(Double.NaN), null));
+        assertThrows(IllegalArgumentException.class, () -> new TrackPlan.PieceProperties(Set.of(Double.POSITIVE_INFINITY), null));
+        assertEquals(TrackPlan.PieceProperties.NONE, new TrackPlan.PieceProperties(null, null));
+        DirectedLocation at = DirectedLocation.of("p", 0, true);
+        Block b = new Block("b", List.of(), at, Set.of(Block.Direction.A_TO_B), null, 0, 1, null, null, null);
+        assertEquals(Set.of(), b.noReversing());
+        assertEquals(PlatformSide.UNSPECIFIED, b.platformSide());
+        // Ableitungen behalten die neuen Angaben
+        Block full = new Block("b", List.of("s"), at, Set.of(Block.Direction.A_TO_B), Set.of(), 0, 1,
+                Set.of(Block.Direction.A_TO_B), Set.of(Block.Direction.B_TO_A), PlatformSide.LEFT);
+        Block derived = full.withDirections(Set.of(Block.Direction.B_TO_A)).withSections("t");
+        assertEquals(full.noReversing(), derived.noReversing());
+        assertEquals(full.noStopping(), derived.noStopping());
+        assertEquals(PlatformSide.LEFT, derived.platformSide());
+        assertEquals(PlatformSide.UNSPECIFIED, new StopPoint("h", at, null, 1, null).platformSide());
     }
 }

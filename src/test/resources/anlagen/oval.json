@@ -2,7 +2,7 @@
 // 45°-Bögen. Zwei Blöcke (Nord, Süd) mit je vier Meldeabschnitten, Trennstellen an den Blockgrenzen.
 // Alle Maße sind synthetische Testwerte, keine Herstellermaße.
 {
-  "formatVersion": 1,
+  "formatVersion": 2,
   "name": "Oval",
   "recommendedSectionsPerBlock": 3,
   "catalog": [

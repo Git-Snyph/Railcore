@@ -8,6 +8,7 @@ import java.util.Map;
 import java.util.OptionalDouble;
 import java.util.OptionalInt;
 import java.util.Set;
+import java.util.TreeSet;
 import java.util.regex.Pattern;
 
 /**
@@ -20,21 +21,30 @@ import java.util.regex.Pattern;
  * ist unveränderlich, ohne Betriebszustand und vergleicht sich über {@code equals} (Hin- und Rückweg).
  *
  * <p>Vorläufiges Format (Entscheidung 35), Version {@link #FORMAT_VERSION}; bis Meilenstein 3 maßgeblich, danach
- * Austauschformat neben SQLite.
+ * Austauschformat neben SQLite. Version 1 wird weiter gelesen und beim Lesen auf die aktuelle Version gehoben.
+ *
+ * <p>Spurweite (Entscheidung 46, Option A): ein Standardwert für die ganze Anlage ({@code gaugeMm}), den ein
+ * verlegtes Stück mit eigenen Spurweiten überschreiben kann ({@link PieceProperties#gaugesMm()}, mehrere bei
+ * Mehrschienengleis einer Spur-in-Spur-Anlage). Angabe in mm (z. B. 16,5 für H0), nicht als Spurname, weil Namen
+ * je Land und Norm verschieden sind (H0m, HOn3 …) und alle anderen Maße der Datei ebenfalls in mm stehen.
  *
  * @param name                        Anzeigename der Anlage ("" = ohne)
  * @param catalog                     Gleisstück-Typen in Dateireihenfolge
  * @param recommendedSectionsPerBlock empfohlene Mindestzahl Meldeabschnitte je Block (Standard 3)
+ * @param gaugeMm                     Spurweite der Anlage in mm; leer = keine Angabe
  */
 public record TrackPlan(int formatVersion, String name, List<TrackPiece> catalog, List<PlacedPiece> pieces,
                         List<Connection> connections, List<PlanSection> sections, List<Block> blocks,
                         List<HoldingArea> holdingAreas, List<PlanDistrict> districts, List<BlockSignal> signals,
                         List<StopPoint> stopPoints, List<SpeedChangePoint> speedChangePoints,
                         List<ReportPointOverride> reportPointOverrides, List<TurnoutAddress> turnoutAddresses,
-                        int recommendedSectionsPerBlock) {
+                        int recommendedSectionsPerBlock, OptionalDouble gaugeMm) {
 
-    /** Formatversion, die dieser Stand liest und schreibt. */
-    public static final int FORMAT_VERSION = 1;
+    /** Formatversion, die dieser Stand schreibt. */
+    public static final int FORMAT_VERSION = 2;
+
+    /** Älteste Formatversion, die dieser Stand noch liest (ohne die Felder ab Version 2). */
+    public static final int OLDEST_READABLE_VERSION = 1;
 
     /** Standard der empfohlenen Abschnitte je Block (Lastenheft Kapitel 4). */
     public static final int DEFAULT_SECTIONS_PER_BLOCK = 3;
@@ -58,6 +68,44 @@ public record TrackPlan(int formatVersion, String name, List<TrackPiece> catalog
         turnoutAddresses = List.copyOf(turnoutAddresses);
         if (recommendedSectionsPerBlock < 1)
             throw new IllegalArgumentException("Empfohlene Abschnittszahl muss mindestens 1 sein: " + recommendedSectionsPerBlock);
+        if (gaugeMm == null) gaugeMm = OptionalDouble.empty();
+        if (gaugeMm.isPresent()) requireGauge(gaugeMm.getAsDouble(), "Spurweite der Anlage");
+    }
+
+    /**
+     * Wirksame Spurweiten eines verlegten Stücks in mm: die eigenen, sonst die der Anlage, sonst leer (keine Angabe).
+     * Reine Auskunft aus der Datei, keine Gleiswahl.
+     */
+    public Set<Double> gaugesMmOf(PlacedPiece piece) {
+        if (!piece.properties().gaugesMm().isEmpty()) return piece.properties().gaugesMm();
+        return gaugeMm.isPresent() ? Set.of(gaugeMm.getAsDouble()) : Set.of();
+    }
+
+    // --- Eigenschaften eines verlegten Stücks -------------------------------------------------------------------
+
+    /**
+     * Angaben zu einem verlegten Stück ohne Einfluss auf Graph und Länge (Entscheidung 46, Option A), Grundlage
+     * für die spätere Gleiswahl nach Spurweite und Traktion (Meilenstein 4).
+     *
+     * @param gaugesMm eigene Spurweiten in mm (mehrere bei Mehrschienengleis); leer = Spurweite der Anlage
+     * @param catenary Oberleitung über dem Stück
+     */
+    public record PieceProperties(Set<Double> gaugesMm, Catenary catenary) {
+        /** Keine eigenen Angaben. */
+        public static final PieceProperties NONE = new PieceProperties(Set.of(), Catenary.UNSPECIFIED);
+
+        public PieceProperties {
+            gaugesMm = gaugesMm == null ? Set.of() : Set.copyOf(gaugesMm);
+            for (double g : gaugesMm) requireGauge(g, "Spurweite");
+            if (catenary == null) catenary = Catenary.UNSPECIFIED;
+        }
+
+        /** Eigene Spurweiten aufsteigend (Reihenfolge in der Datei). */
+        public List<Double> sortedGaugesMm() { return List.copyOf(new TreeSet<>(gaugesMm)); }
+    }
+
+    private static void requireGauge(double mm, String what) {
+        if (!(mm > 0) || !Double.isFinite(mm)) throw new IllegalArgumentException(what + " muss größer 0 sein: " + mm);
     }
 
     // --- verlegte Stücke ----------------------------------------------------------------------------------------
@@ -74,45 +122,63 @@ public record TrackPlan(int formatVersion, String name, List<TrackPiece> catalog
         String type();
 
         boolean lengthUnknown();
+
+        /** Spurweite und Oberleitung ({@link PieceProperties#NONE} = keine eigenen Angaben). */
+        PieceProperties properties();
     }
 
     /** Gerades Stück, Bogen oder Flexgleis; {@code lengthMm} überschreibt die Typlänge (Entscheidung 42). */
-    public record PlainPlacement(String id, String type, OptionalDouble lengthMm, boolean lengthUnknown)
-            implements PlacedPiece {
+    public record PlainPlacement(String id, String type, OptionalDouble lengthMm, boolean lengthUnknown,
+                                 PieceProperties properties) implements PlacedPiece {
         public PlainPlacement {
             requireText(id, "Stückkennung");
             requireText(type, "Stück " + id + ": Typ");
             if (lengthMm == null) lengthMm = OptionalDouble.empty();
             if (lengthMm.isPresent() && (!(lengthMm.getAsDouble() > 0) || !Double.isFinite(lengthMm.getAsDouble())))
                 throw new IllegalArgumentException("Stück " + id + ": eigene Länge muss größer 0 sein: " + lengthMm.getAsDouble());
+            if (properties == null) properties = PieceProperties.NONE;
+        }
+
+        public PlainPlacement(String id, String type, OptionalDouble lengthMm, boolean lengthUnknown) {
+            this(id, type, lengthMm, lengthUnknown, PieceProperties.NONE);
         }
     }
 
     /** Weiche mit logischer Weichenkennung und eigenen Zweiglängen und Grenzzeichen (Entscheidung 41). */
     public record TurnoutPlacement(String id, String type, String turnoutId, TurnoutBranches branches,
-                                   boolean lengthUnknown) implements PlacedPiece {
+                                   boolean lengthUnknown, PieceProperties properties) implements PlacedPiece {
         public TurnoutPlacement {
             requireText(id, "Stückkennung");
             requireText(type, "Stück " + id + ": Typ");
             requireText(turnoutId, "Weiche " + id + ": Weichenkennung");
             if (branches == null) throw new IllegalArgumentException("Weiche " + id + ": Zweiglängen und Grenzzeichen fehlen");
+            if (properties == null) properties = PieceProperties.NONE;
+        }
+
+        public TurnoutPlacement(String id, String type, String turnoutId, TurnoutBranches branches, boolean lengthUnknown) {
+            this(id, type, turnoutId, branches, lengthUnknown, PieceProperties.NONE);
         }
     }
 
     /** Kreuzung mit eigenen Maßen (Entscheidung 42). */
     public record CrossingPlacement(String id, String type, TrackPiece.CrossingDimensions dimensions,
-                                    boolean lengthUnknown) implements PlacedPiece {
+                                    boolean lengthUnknown, PieceProperties properties) implements PlacedPiece {
         public CrossingPlacement {
             requireText(id, "Stückkennung");
             requireText(type, "Stück " + id + ": Typ");
             if (dimensions == null) throw new IllegalArgumentException("Kreuzung " + id + ": Maße fehlen");
+            if (properties == null) properties = PieceProperties.NONE;
+        }
+
+        public CrossingPlacement(String id, String type, TrackPiece.CrossingDimensions dimensions, boolean lengthUnknown) {
+            this(id, type, dimensions, lengthUnknown, PieceProperties.NONE);
         }
     }
 
     /** Doppelkreuzungsweiche mit Kennungen beider Hälften, eigenen Fahrweglängen und Grenzzeichen (Entscheidung 41). */
     public record DoubleSlipPlacement(String id, String type, String turnoutIdA, String turnoutIdB,
                                       TrackPiece.DoubleSlipLengths routeLengths, DoubleSlipClearances clearances,
-                                      boolean lengthUnknown) implements PlacedPiece {
+                                      boolean lengthUnknown, PieceProperties properties) implements PlacedPiece {
         public DoubleSlipPlacement {
             requireText(id, "Stückkennung");
             requireText(type, "Stück " + id + ": Typ");
@@ -120,6 +186,13 @@ public record TrackPlan(int formatVersion, String name, List<TrackPiece> catalog
             requireText(turnoutIdB, "Doppelkreuzungsweiche " + id + ": Kennung Seite B");
             if (routeLengths == null || clearances == null)
                 throw new IllegalArgumentException("Doppelkreuzungsweiche " + id + ": Fahrweglängen oder Grenzzeichen fehlen");
+            if (properties == null) properties = PieceProperties.NONE;
+        }
+
+        public DoubleSlipPlacement(String id, String type, String turnoutIdA, String turnoutIdB,
+                                   TrackPiece.DoubleSlipLengths routeLengths, DoubleSlipClearances clearances,
+                                   boolean lengthUnknown) {
+            this(id, type, turnoutIdA, turnoutIdB, routeLengths, clearances, lengthUnknown, PieceProperties.NONE);
         }
     }
 
