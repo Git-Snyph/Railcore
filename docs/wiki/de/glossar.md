@@ -39,5 +39,6 @@ Verbindlich für Anleitung, Wiki, Oberfläche und Übersetzungen. Neue Begriffe 
 | unbekannt (Melder) | unknown (detector) | Zustand nach dem Start, bis der Melder eine Meldung geschickt hat; gilt nie als frei |
 | unbestätigt (Zug) | unconfirmed (train) | Zustand nach dem Start, bis die Position des Zuges bestätigt ist |
 | Wiederanlauf | restart / recovery | Rückkehr in den Betrieb nach Nothalt oder Neustart |
+| Zugausdehnung | train extent | Belegung von der Zugspitze bis zum Zugschluss: Kanten, Meldeabschnitte, Blöcke, Weichen und Bezirke |
 | Zugbeeinflussung | train protection | Überwachung, die Fahrbefehle begrenzt oder den Zug hält |
 | Zugverband | consist | Lok mit Wagen, gemeinsam eingemessen |
