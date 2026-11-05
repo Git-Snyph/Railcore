@@ -98,6 +98,17 @@ final class Coverage {
         return out;
     }
 
+    /**
+     * Eigentümer, deren Bereiche sich mit {@code [from, to]} auf der Kante um mehr als {@link #TOL} überschneiden
+     * (bloßes Berühren in einem Punkt zählt nicht), in der Reihenfolge ihrer Bereiche.
+     */
+    Set<String> ownersOverlapping(String edgeId, double from, double to) {
+        Set<String> out = new LinkedHashSet<>();
+        for (Interval i : raw(edgeId))
+            if (Math.min(to, i.to()) - Math.max(from, i.from()) > TOL) out.add(i.owner());
+        return out;
+    }
+
     /** Vereinigter Bereich in Fahrkoordinaten der gerichteten Kante: {@code [anfang, ende]} ab Kantenanfang in Fahrrichtung. */
     static double[] along(DirectedEdge d, Interval i) {
         return d.forward() ? new double[] {i.from(), i.to()}
