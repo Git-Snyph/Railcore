@@ -100,6 +100,27 @@ public class Z21CheckTest {
         assertEquals(Outcome.CONFIRMED, f(r, "F29–F31").outcome());
     }
 
+    public void testCanBoosterStateIsObservedOnly() {
+        // 10807 mit NId 0xC101: Ausgang 1 in Ordnung mit RailCom-Lücke, Ausgang 2 vom Nutzer abgeschaltet
+        sim.broadcastAt(500, SimulatedZ21.packet(0xCA, 0x01, 0xC1, 1, 0, 0x00, 0x08, 0x50, 0x46, 0xDC, 0x05));
+        sim.broadcastAt(600, SimulatedZ21.packet(0xCA, 0x01, 0xC1, 2, 0, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00));
+        CheckReport r = run(new ScriptedOperator());
+        for (byte[] p : sim.sent) assertEquals(CommandClass.PASSIVE, CommandClass.of(p));
+        assertEquals(Outcome.CONFIRMED, f(r, "Broadcast-Flag CAN-Booster").outcome());
+        Finding b = f(r, "CAN-Booster");
+        assertEquals(Outcome.CONFIRMED, b.outcome());
+        assertEquals(true, b.verifyOnHardware());
+        assertEquals(true, b.detail().contains("NId 0xC101 Ausgang 1: 1 Meldungen, zuletzt 18000 mV, 1500 mA"));
+        assertEquals(true, b.detail().contains("RailCom-Lücke aktiv"));
+        assertEquals(true, b.detail().contains("Ausgang 2: 1 Meldungen, zuletzt 0 mV, 0 mA, Zustand 0x0100 [Ausgang vom Nutzer abgeschaltet]"));
+    }
+
+    public void testNoCanBoosterMessageIsUnknown() {
+        CheckReport r = run(new ScriptedOperator());
+        assertEquals(Outcome.UNKNOWN, f(r, "CAN-Booster").outcome());
+        assertEquals(true, f(r, "CAN-Booster").verifyOnHardware());
+    }
+
     public void testPacketTypesAndLocoSamplesAreReported() {
         sim.broadcastAt(700, sim.locoInfo(3));
         CheckReport r = run(new ScriptedOperator());

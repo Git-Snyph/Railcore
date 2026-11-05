@@ -23,6 +23,8 @@ Sendet nur Abfragen und Abos (Positivliste in `CommandClass`): Seriennummer, HW-
 - eine Lok mit einem Handregler zu bewegen (Lok-Broadcast, F29–F31-Byte),
 - die Stellvertreter-Adresse an der WLAN-Maus aufzurufen – nur, wenn dort sicher kein Decoder ist.
 
+Zusätzlich wird das Broadcast-Flag 0x00020000 (CAN-Booster) gesetzt und die Zustandsmeldung der Booster (Header 0xCA, je Booster und Ausgang etwa einmal pro Sekunde) mitgeschnitten. Das ist nur Beobachtung: Booster-Schaltbefehle (0xCB, 0xB2) stehen nicht auf der Positivliste und werden vom Prüfprogramm nie gesendet.
+
 ## Stufe 2 – aktiv
 
 Jeder Eingriff wird im Klartext angekündigt und nur nach der Eingabe `JA` (Großbuchstaben) ausgeführt. Jede andere Eingabe, eine Zeitüberschreitung, eine fehlende Rückmeldung oder mehr als `--verbindung-ms` Stille bricht die Stufe ab: ein aktiver Weichenausgang wird abgeschaltet, an die Stellvertreter-Adresse geht sofort ein Nothalt.
@@ -42,7 +44,36 @@ Jeder Eingriff wird im Klartext angekündigt und nur nach der Eingabe `JA` (Gro�
 
 **Geklärt:** RailCom-Richtungsbits des 10808 zeigen die Aufgleisrichtung der Lok, nicht die Fahrtrichtung; die Z21 sendet trotz Abo keinen Lok-Broadcast bei Fremdsteuerung; Handregler auf Stellvertreter-Adresse per Abfrage lesbar (Verzögerung höchstens Abfrageabstand), Rückschreiben auf die Anzeige möglich; Weichenlage nach RCN-213 (P=1 gerade, P=0 abzweigend) und 10836-Adressierung bestätigt; POM-Lesen am Zubehördecoder über Decoderadresse (Weiche − 1) / 4; die Z21 bestätigt eigene Fahrbefehle mit einer Lokmeldung; Antwortzeiten 1–22 ms.
 
-**Noch offen, an Hardware zu prüfen:** R-Bus-Modulzählung (Versatz um ein Modul, R-Bus wird deshalb nicht genutzt), genaue Antwortzeit des Echos auf Fahrbefehle (Grundlage für die Budget-Nachführung, Entscheidung 27), Zusammenspiel der WLAN-Maus mit dem RailCore-LAN-Server (noch nicht gebaut).
+**Noch offen, an Hardware zu prüfen:** R-Bus-Modulzählung (Versatz um ein Modul, R-Bus wird deshalb nicht genutzt), genaue Antwortzeit des Echos auf Fahrbefehle (Grundlage für die Budget-Nachführung, Entscheidung 27), Zusammenspiel der WLAN-Maus mit dem RailCore-LAN-Server (noch nicht gebaut), Booster 10807 über CAN (siehe unten).
+
+### Booster 10807: einzeln schaltbar, Diagnose über CAN (Entscheidung 46, Option C)
+
+**Laut Dokumentation** (Z21-LAN-Protokoll-Spezifikation V1.13 vom 06.11.2023, Kap. 2.16, 10.2 und 11.2; [z21.eu, englische Fassung](https://www.z21.eu/media/Kwc_Basic_DownloadTag_Component/root-en-main_47-1652-959-downloadTag-download/default/d559b9cf/1558675126/z21-lan-protokoll-en.pdf)):
+
+- Die Booster 10806, 10807 und 10869 sind am CAN-Bus eine **eigene Geräteklasse**, nicht die des 10808: eigene CAN-NetworkID 0xC101–0xC1FF (10808: Meldungen unter LAN_CAN_DETECTOR 0xC4), eigenes Broadcast-Flag 0x00020000 (10808: 0x00080000), eigene LAN-Header. Gilt nur, wenn der Booster **über CAN** an der Z21 hängt, nicht über B-Bus; Z21-Firmware ab 1.41 (unsere Z21: 1.43).
+- **Diagnose über die Z21 (CAN):** LAN_CAN_BOOSTER_SYSTEMSTATE_CHGD (0xCA), etwa einmal pro Sekunde je Booster und Ausgang: NetworkID, Ausgang (1, beim 10807 auch 2), Zustandsbits (Bremsgenerator, Kurzschluss, Gleisspannung aus, Ausgang vom Nutzer abgeschaltet, RailCom-Lücke), **Spannung (mV) und Strom (mA) je Ausgang**. **Keine Temperatur** in dieser Meldung.
+- **Einzeln schalten über die Z21 (CAN):** LAN_CAN_BOOSTER_SET_TRACKPOWER (0xCB) schaltet alle Ausgänge eines Boosters ab/zu; **je Ausgang** erst ab Z21-Firmware 1.42 **und Booster-Firmware 1.11**. Wiedereinschalten nur, wenn die Z21 selbst ein gültiges Gleissignal sendet; die Einstellung wird **nicht dauerhaft gespeichert** (ein abgeschalteter Ausgang ist nach einem Neustart also vermutlich wieder eingeschaltet – an Hardware zu prüfen).
+- **Direkt am Booster über zLink** (10838 Z21 pro LINK, WLAN, eigene IP): LAN_BOOSTER_SYSTEMSTATE_GETDATA/_DATACHANGED (0xBB/0xBA) mit Strom, geglättetem Strom, **Temperatur je Verstärker**, Versorgungs- und Ausgangsspannung, Kurzschluss-, Übertemperatur- und Unterspannungsbits; LAN_BOOSTER_SET_POWER (0xB2) je Ausgang. Die Spezifikation empfiehlt dort möglichst nur einen Client je pro LINK (höchstens vier) und mindestens 50 ms Pause zwischen Anfragen.
+
+**Umsetzung im Prüfprogramm:** Stufe 1 setzt das Flag 0x00020000 und meldet „Broadcast-Flag CAN-Booster“ sowie „CAN-Booster“ (empfangene Meldungen je NetworkID und Ausgang, zuletzt gemeldete Spannung, Strom, Zustandsbits). Ohne Meldung: „unbekannt“, nie „nicht vorhanden“. Geschaltet wird nichts. Im Betriebstreiber wird die Meldung nur dekodiert und **nicht ausgewertet** (Diagnosemeldung).
+
+**Noch offen, an Hardware zu prüfen:**
+- Hängen die beiden 10807 über CAN oder B-Bus an der Z21? Kommen 0xCA-Meldungen an (nächster passiver Lauf)?
+- Welche NetworkID gehört zu welchem Booster, welcher Ausgang zu welchem Bezirk (ZS1/ZS2)? Grundlage für die Quelle der Bezirksmeldung (Entscheidung 40/E7).
+- Booster-Firmware (ab 1.11 für einzelnes Schalten je Ausgang); stimmen Spannung, Strom und Zustandsbits mit der Wartungs-App überein?
+- Einzelschalten (0xCB) erst nach eigener Freigabe durch den Nutzer und nur in Stufe 2 mit „JA“; noch nicht gebaut. Grundsätzlich gilt: Ein abgeschalteter Ausgang lässt Züge stehen, ist aber kein Nothalt-Ersatz, und weil die Abschaltung nicht gespeichert wird, darf RailCore nach einem Neustart von Booster, Z21 oder RailCore nie annehmen, dass ein Ausgang noch aus ist (Grundsatz 5).
+- zLink/pro LINK (Temperatur): nur, falls ein pro LINK an einem Booster steckt; eigener Kanal neben der Z21, Architekturfrage.
+
+### RZTec Speedbox II (externes Messgerät zum Einmessen, Lastenheft Kap. 6)
+
+**Laut Herstellerunterlagen** ([Bedienungsanleitung Speedbox II, Version 1.26, 05.08.2023](http://www.rztec.de/Downloads/SpeedboxManuals/Speedbox%20II%201.26%20de.pdf); [Download-Seite rztec.de](https://www.rztec.de/Downloads/)):
+
+- Anschluss nur **USB**; am PC ein **virtueller COM-Port** über einen USB-Seriell-Wandler (FTDI oder CH340, je nach Gerät, Aufdruck auf der Verpackung). Strom ebenfalls über USB. Von Bluetooth oder WLAN ist in Anleitung und Download-Seite keine Rede.
+- Misst die Geschwindigkeit vorbeifahrender Fahrzeuge (Anzeige km/h oder mph, auf den Maßstab umgerechnet) und die **Länge** von Lok oder Zug; der Maßstab wird von der Hersteller-Software eingestellt.
+- Angebunden in TrainController Gold (ab 9), Win-Digipet (ab 2018-1) und iTrain (ab 5) jeweils als eigene Schnittstelle mit COM-Port – also **kein Teil der Zentrale**, sondern ein eigenes Gerät neben ihr.
+- **Das serielle Protokoll (Baudrate, Befehle, Meldungsformat) ist nicht öffentlich dokumentiert**, weder in der Anleitung noch auf der Download-Seite. Bekannt aus der Anleitung ist nur, dass die Box sich beim Verbinden mit „PCBox“ meldet.
+
+**Offen:** Protokollbeschreibung beim Hersteller anfragen (info@rztec.de); ohne sie wird nichts angebunden (kein Mitschneiden und Nachbauen fremder Protokolle als Grundlage für Messwerte). Für RailCore wäre die Speedbox kein `CommandStation`-Adapter, sondern ein eigener Messgeräte-Adapter (nur lesend, kein Befehl an Loks), dessen Werte ausschließlich in das Einmessen fließen. Ob sie angebunden wird, entscheidet der Nutzer.
 
 Details und Rohdaten je Lauf siehe unten.
 

@@ -42,6 +42,17 @@ public sealed interface Z21Message {
     record RailComData(int locoAddress, long receiveCounter, int errorCounter, int options, int speed, int qos)
             implements Diagnostic {}
 
+    /**
+     * LAN_CAN_BOOSTER_SYSTEMSTATE_CHGD (Header 0xCA, ab Firmware 1.41): Zustand eines Ausgangs eines CAN-Boosters,
+     * laut Spezifikation etwa einmal je Sekunde je Booster und Ausgang. networkId 0xC101..0xC1FF, outputPort 1 oder 2
+     * (2 nur 10807), state = Booster_State-Bits ({@code Z21Protocol.BS_*}), Spannung in mV, Strom in mA.
+     * Nur Diagnose: Deutung und Zuordnung zu Booster-Bezirken sind an Hardware zu prüfen, der Betriebstreiber
+     * wertet die Meldung nicht aus. Temperatur liefert diese CAN-Meldung nicht (nur die zLink-Meldung 0xBA direkt
+     * vom Booster).
+     */
+    record CanBoosterState(int networkId, int outputPort, int state, int vccVoltageMv, int currentMa)
+            implements Diagnostic {}
+
     /** LAN_X_UNKNOWN_COMMAND: die Zentrale kennt den Befehl nicht. */
     record UnknownCommand() implements Diagnostic {}
 
