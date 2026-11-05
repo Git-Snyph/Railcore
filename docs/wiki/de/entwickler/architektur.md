@@ -41,7 +41,7 @@ Der Z21-Adapter spricht die Z21 über `z21.Z21Link` (UDP); in Tests ersetzt eine
 | `core` | Schnittstelle `CommandStation`, Fähigkeiten (`StationCapabilities`), Lokzustand, Richtung, Melderkontakte |
 | `z21` | Z21-Adapter: Treiber, Paketverbindung (`Z21Link`), Protokoll, Nachrichten; `z21.check` ist das Prüfprogramm |
 | `control` | Verdrahtung (`ControlRuntime`), Steuerungs-Executor, Handregler-Abfrage, Anlagenzustand und Momentaufnahme, Executor-Watchdog, Freigabe (`MovementAuthority`), Befehlsplaner (`CommandScheduler`, siehe [Befehlsplaner](befehlsplaner.md)), Zugsteuerung (`TrainDriver`) |
-| `train` | Fahrdynamik, Bremskurve, Positionsrechnung und -unsicherheit, Halteplanung |
+| `train` | Fahrdynamik, Bremskurve, Positionsrechnung und -unsicherheit, Halteplanung; Zugposition und -ausdehnung auf dem Gleisgraph, Fahrauftrag aus einem Fahrweg (Schritt C1) |
 | `layout` | Gleisplan-Modell: Blöcke, Ausgänge, Licht, Laden aus Datei |
 | `layout.graph` | Gleisgraph (Schritte B1, B2): Gleisstückbibliothek mit Geometrie, daraus berechnete Knoten und Kanten in mm, Ort, Fahrweg, Weichenlagen als Eingabe; Auflagen (Meldeabschnitte, Blöcke, Punkte, Signale, Bezirke) und Gleisplan-Prüfung (`TrackLayout`) |
 | `safety` | Betriebszustand, Melderzustand (unbekannt/frei/belegt), Melderfilter, Kommunikations-Watchdog |
@@ -51,7 +51,7 @@ Der Z21-Adapter spricht die Z21 über `z21.Z21Link` (UDP); in Tests ersetzt eine
 
 ## Gleisgraph: `layout.graph`
 
-Grundmodell nach Lastenheft Kapitel 4 und Entscheidung 40 (E2, E3, E10). Reines, unveränderliches Java-Modell ohne Zustand; noch ohne Datei, Lader und Anbindung an Steuerung oder Positionsrechnung (folgt in B3–B4 und C).
+Grundmodell nach Lastenheft Kapitel 4 und Entscheidung 40 (E2, E3, E10). Reines, unveränderliches Java-Modell ohne Zustand; noch ohne Datei, Lader und Anbindung an die Steuerung (folgt in B3–B4 und C); Zugposition auf dem Graph siehe unten (C1).
 
 - **Gleisstückbibliothek** (`TrackPiece`, `TrackPieceCatalog`): gerade Stücke und Bögen (`TrackGeometry`: Länge bzw. Radius und Winkel, auch zusammengesetzt), Weiche, Kreuzung, Doppelkreuzungsweiche. Im Code stehen keine Herstellermaße. Bei Weichen, Doppelkreuzungsweichen und Kreuzungen liefert der Typ nur einen Vorschlag; maßgeblich sind die Werte je verlegtem Stück (Entscheidungen 41, 42). Gerade Stücke und Bögen dürfen beim Verlegen eine eigene Länge bekommen, die den Typwert überschreibt (vorläufig, Entscheidung 42).
 - **Graph** (`TrackGraph.Builder`): verlegte Stücke werden über ihre Anschlüsse verbunden (Stoß, Trennstelle, Gleisende); Knoten und Kanten samt Längen berechnet der Builder. Offene Anschlüsse und andere Fehler werden gesammelt gemeldet (`TrackGraphException`).
@@ -68,7 +68,16 @@ Grundmodell nach Lastenheft Kapitel 4 und Entscheidung 40 (E2, E3, E10). Reines,
 - **Richtung:** Kanten haben keine globale Ausrichtung. Ein Block legt sein Ende A als Ort mit Richtung in den Block fest (`DirectedLocation`); daraus berechnet `TrackLayout` Länge, Enden und Ausrichtung je Kante (`BlockGeometry`). Punkte tragen ihre Richtung bezogen auf die Kante.
 - **Prüfung** (`findings()`, `LayoutFinding` mit Art und Schweregrad): Der Bau wirft bei inhaltlichen Fehlern keine Ausnahme, damit der ganze Bericht angezeigt werden kann; jeder Fehler sperrt die Automatik (`permitsAutomatic()`), Hinweise werden nur angezeigt. Fehler: Block ohne Melder, überlappende Abschnitte oder Bezirke, doppelte Kontakte, Adressen oder Kennungen, unbekannte Verweise, ungültige Lagen, Kehrschleife ohne Kehrschleifenbezirk, Abschnitt in zwei Blöcken, Blockgeometrie, Haltebereich nicht zusammenhängend. Hinweise: weniger als 3 Abschnitte je Block (einstellbar), unbekannte Länge, Gleis ohne Melder, Gleis ohne Bezirk, Weiche ohne Belegtabschnitt, Sackgasse ohne Ausweg, unerreichbarer Knoten, Block ohne Ausfahrt, DKW mit ungeprüfter Stelllogik.
 - **Kehrschleife:** Polaritätsprüfung über alle Übergänge des Graphs (erkennt auch Gleisdreiecke); aufgelöst nur durch Gleis, das ganz in einem Kehrschleifenbezirk liegt. Trennstellen zählen nicht als Auflösung.
-- **Indizes** enthalten nur gültige Angaben (bei doppelten Kennungen gilt die erste): Abschnitt → Block, Bezirk → Abschnitte, Kontakt → Abschnitt, Ort → Abschnitte/Blöcke/Bezirke, Signal → Lage.
+- **Indizes** enthalten nur gültige Angaben (bei doppelten Kennungen gilt die erste): Abschnitt → Block, Bezirk → Abschnitte, Kontakt → Abschnitt, Ort → Abschnitte/Blöcke/Bezirke, Bereich → überschneidende Abschnitte/Blöcke/Bezirke (Berühren zählt nicht), Signal → Lage.
+
+## Zugposition auf dem Gleisgraph: `train` (Schritt C1)
+
+> Status: Entwurf – reines Modell, noch nicht an Steuerungs-Executor, Simulator oder `TrainDriver` angeschlossen (folgt in C2/C3).
+
+- **`TrainPosition`**: Zugspitze als Ort mit Fahrtrichtung (`DirectedLocation`), Decoder-Richtung zur Spitze hin (Ausrichtung der Lok), Unsicherheit des letzten Abgleichs und Strecke seither; σ wie im `PositionEstimator` mit den `PositionUncertainty`-Parametern des Zuges. Nach Neustart „unbestätigt“ (Grundsatz 5). Vorrücken auf dem Graph nur über bekannte, passende Weichenlagen; Richtungswechsel macht den Zugschluss zur Spitze. Hin- und Rückrechnung zwischen Wegkoordinate eines `GraphPath` und Ort.
+- **`TrainExtent`** (berechnet mit `TrainExtent.Resolver`, einmal je Gleisplan): von der Spitze über die Zuglänge zurück bis zum Zugschluss; belegte Bereiche, Meldeabschnitte, Blöcke (auch mehrere, Entscheidung 40/E6), Weichen (Zweige und Bereich bis zum Grenzzeichen, DKW mit beiden Antrieben), Kreuzungen und Bezirke, jeweils von der Spitze zum Schluss. Liegt hinter dem Zug eine Weichenspitze mit unbekannter Lage, gelten alle Zweige als belegt („mehrdeutig“); liegt eine Weiche unter dem Zug bekanntermaßen falsch, ist das ein Widerspruch; passt der Zug nicht hinter die Spitze (Prellbock), ist die Ausdehnung unvollständig. Optional Zuschläge vorn und hinten, z. B. k · σ der Position.
+- **`DriveOrderFactory`**: baut aus Position und Fahrweg (`GraphPath` ab der Zugspitze) einen unveränderten `DriveOrder` (Wegkoordinate 0 = Spitze). Meldepunkte aus den Abschnittsgrenzen je Fahrtrichtung (`TrackLayout.reportPoints`) plus Abstand der ersten stromabnehmenden Achse (vorläufig 20 mm, bis MobaDB-Daten vorliegen), Melderverzögerung = Ansprechverzögerung des Abschnitts mit vorläufiger Streuung 10 ms. Weggelassen werden Meldepunkte hinter dem Freigabeende und solche, deren Abschnitt dann noch vom eigenen Zug belegt ist. Ziel: Haltepunkt (Bahnsteig), Signal oder Freigabeende (Strecke). Das Freigabeende liegt vor dem ersten Gleisstück einer Weiche, deren verlangte Lage nicht anliegt (auch unbekannt); ein Ziel dahinter wird durch einen Halt auf der Strecke davor ersetzt. Abgewiesen werden Gleisplan mit Fehlern, unbestätigte Position und nicht eindeutige Ausdehnung.
+- Der blockbasierte `train.TrackPath` ist entfallen (wurde nirgends verwendet, Entscheidung 35).
 
 ## Geplant
 
