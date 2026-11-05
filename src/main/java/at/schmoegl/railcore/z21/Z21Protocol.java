@@ -22,7 +22,7 @@ public final class Z21Protocol {
             H_BROADCASTFLAGS = 0x50, H_GET_BROADCASTFLAGS = 0x51,
             H_RMBUS_DATACHANGED = 0x80, H_RMBUS_GETDATA = 0x81,
             H_SYSTEMSTATE_DATACHANGED = 0x84, H_SYSTEMSTATE_GETDATA = 0x85,
-            H_RAILCOM_DATACHANGED = 0x88, H_CAN_DETECTOR = 0xC4;
+            H_RAILCOM_DATACHANGED = 0x88, H_CAN_DETECTOR = 0xC4, H_CAN_BOOSTER_SYSTEMSTATE_CHGD = 0xCA;
 
     /** Broadcast-Flags: Fahr- und Schaltinfos + R-Bus-Rückmelder. */
     public static final int BC_DRIVING_SWITCHING = 0x00000001, BC_RBUS = 0x00000002, BC_CAN_DETECTOR = 0x00080000;
@@ -33,6 +33,15 @@ public final class Z21Protocol {
      */
     public static final int BC_RAILCOM = 0x00000004, BC_SYSTEM_STATE = 0x00000100,
             BC_ALL_LOCOS = 0x00010000, BC_RAILCOM_ALL = 0x00040000;
+    /**
+     * Zustandsmeldungen der CAN-Booster 10806/10807/10869 weiterleiten (ab Firmware 1.41, Spezifikation V1.13
+     * Kap. 2.16/10.2.3). Nur sinnvoll, wenn die Booster über CAN (nicht B-Bus) an der Z21 hängen – an Hardware zu prüfen.
+     */
+    public static final int BC_CAN_BOOSTER = 0x00020000;
+
+    /** Booster_State-Bits aus LAN_CAN_BOOSTER_SYSTEMSTATE_CHGD (Spezifikation V1.13 Kap. 10.2.3). */
+    public static final int BS_BRAKE_GENERATOR_ACTIVE = 0x0001, BS_SHORT_CIRCUIT = 0x0020,
+            BS_TRACK_VOLTAGE_OFF = 0x0080, BS_OUTPUT_DISABLED = 0x0100, BS_RAILCOM_ACTIVE = 0x0800;
 
     /** NId für "alle CAN-Belegtmelder". */
     public static final int CAN_ALL = 0xD000;
@@ -214,6 +223,10 @@ public final class Z21Protocol {
                 break;
             case H_CAN_DETECTOR:
                 if (d.length >= 10) return decodeCanDetector(d);
+                break;
+            case H_CAN_BOOSTER_SYSTEMSTATE_CHGD:
+                // NId(2) Booster_OutputPort(2) Booster_State(2) Booster_VCCVoltage mV(2) Booster_Current mA(2), alles LE
+                if (d.length >= 10) return new Z21Message.CanBoosterState(u16(d, 0), u16(d, 2), u16(d, 4), u16(d, 6), u16(d, 8));
                 break;
             case H_X:
                 if (d.length < 2 || !xorOk(d)) return new Z21Message.Unknown(header, d);

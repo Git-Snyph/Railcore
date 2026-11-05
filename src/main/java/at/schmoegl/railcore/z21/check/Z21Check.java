@@ -25,7 +25,8 @@ import java.util.function.Predicate;
  *
  * <p><b>Stufe 1 (passiv, Standard)</b> sendet ausschließlich Abfragen und Abos ({@link CommandClass#PASSIVE}):
  * Seriennummer, HW-Info, Firmware, Freischaltcode, Status, Systemzustand, Broadcast-Flags, R-Bus, CAN-Melder,
- * Lok- und Weicheninfo; danach werden Meldungen eine einstellbare Zeit mitgeschnitten.
+ * Lok- und Weicheninfo; danach werden Meldungen eine einstellbare Zeit mitgeschnitten (darunter die
+ * Zustandsmeldungen der CAN-Booster, nur beobachtet – Booster werden nie geschaltet).
  *
  * <p><b>Stufe 2 (aktiv)</b> – Gleisspannung, Weiche stellen, POM-Zubehör lesen, Fahren auf der
  * Stellvertreter-Adresse – nur nach ausdrücklicher Einzelbestätigung („JA“). Jede andere Eingabe,
@@ -44,7 +45,8 @@ public final class Z21Check {
 
     /** Anforderung aller Broadcast-Flags, deren Unterstützung erkannt werden soll. */
     static final int REQUESTED_FLAGS = Z21Protocol.BC_DRIVING_SWITCHING | Z21Protocol.BC_RBUS | Z21Protocol.BC_RAILCOM
-            | Z21Protocol.BC_SYSTEM_STATE | Z21Protocol.BC_ALL_LOCOS | Z21Protocol.BC_RAILCOM_ALL | Z21Protocol.BC_CAN_DETECTOR;
+            | Z21Protocol.BC_SYSTEM_STATE | Z21Protocol.BC_ALL_LOCOS | Z21Protocol.BC_RAILCOM_ALL | Z21Protocol.BC_CAN_DETECTOR
+            | Z21Protocol.BC_CAN_BOOSTER;
 
     private final CheckConfig cfg;
     private final Z21Transport link;
@@ -295,6 +297,7 @@ public final class Z21Check {
         evaluateFlags();
         evaluateRBus();
         evaluateCan();
+        evaluateCanBoosters();
         evaluatePackets();
         evaluateLocos();
         if (cfg.turnoutAddress() > 0) {
@@ -339,6 +342,7 @@ public final class Z21Check {
         names.put(Z21Protocol.BC_ALL_LOCOS, "Lok-Broadcast (alle Loks)");
         names.put(Z21Protocol.BC_RAILCOM_ALL, "RailCom (alle Loks)");
         names.put(Z21Protocol.BC_CAN_DETECTOR, "CAN-Belegtmelder");
+        names.put(Z21Protocol.BC_CAN_BOOSTER, "CAN-Booster");
         for (var e : names.entrySet()) {
             String topic = "Broadcast-Flag " + e.getValue();
             if (flags == null) add(topic, Outcome.UNKNOWN, "Flags nicht zurückgelesen", false);
@@ -366,6 +370,47 @@ public final class Z21Check {
         add("R-Bus", Outcome.CONFIRMED, "Antwort erhalten" + (rbus[0] == null || rbus[1] == null ? " (nur eine Gruppe)" : "")
                 + "; belegte Eingänge: " + (active.length() == 0 ? "keine" : active)
                 + ". Die Zentrale antwortet auch ohne angeschlossene Module – Vorhandensein nicht nachweisbar", true);
+    }
+
+    /**
+     * CAN-Booster (10806/10807/10869) über LAN_CAN_BOOSTER_SYSTEMSTATE_CHGD, nur beobachtet. Ohne Meldung bleibt das
+     * Ergebnis „unbekannt“ (Booster am B-Bus, Booster- oder Zentralen-Firmware zu alt, oder keine Weiterleitung) –
+     * nie „nicht vorhanden“. Die Deutung je Bezirk ist an Hardware zu prüfen.
+     */
+    private void evaluateCanBoosters() {
+        Map<String, Integer> count = new TreeMap<>();
+        Map<String, String> last = new TreeMap<>();
+        for (Z21Message m : received) {
+            if (!(m instanceof Z21Message.CanBoosterState b)) continue;
+            String key = String.format("NId 0x%04X Ausgang %d", b.networkId(), b.outputPort());
+            count.merge(key, 1, Integer::sum);
+            last.put(key, String.format("%d mV, %d mA, Zustand 0x%04X [%s]", b.vccVoltageMv(), b.currentMa(),
+                    b.state(), boosterStateBits(b.state())));
+        }
+        if (count.isEmpty()) {
+            add("CAN-Booster", Outcome.UNKNOWN, "keine Booster-Zustandsmeldung (0xCA) empfangen – Booster nicht über CAN "
+                    + "angeschlossen (B-Bus), Flag nicht übernommen oder Firmware zu alt", true);
+            return;
+        }
+        StringJoiner sj = new StringJoiner("; ");
+        count.forEach((k, n) -> sj.add(k + ": " + n + " Meldungen, zuletzt " + last.get(k)));
+        add("CAN-Booster", Outcome.CONFIRMED, sj.toString(), true);
+    }
+
+    static final Map<Integer, String> BOOSTER_STATE_BITS = new LinkedHashMap<>();
+    static {
+        BOOSTER_STATE_BITS.put(Z21Protocol.BS_BRAKE_GENERATOR_ACTIVE, "Bremsgenerator");
+        BOOSTER_STATE_BITS.put(Z21Protocol.BS_SHORT_CIRCUIT, "Kurzschluss");
+        BOOSTER_STATE_BITS.put(Z21Protocol.BS_TRACK_VOLTAGE_OFF, "Gleisspannung aus");
+        BOOSTER_STATE_BITS.put(Z21Protocol.BS_OUTPUT_DISABLED, "Ausgang vom Nutzer abgeschaltet");
+        BOOSTER_STATE_BITS.put(Z21Protocol.BS_RAILCOM_ACTIVE, "RailCom-Lücke aktiv");
+    }
+
+    /** Benannte Booster_State-Bits; nicht dokumentierte Bits stehen nur im Rohwert. */
+    static String boosterStateBits(int state) {
+        StringJoiner sj = new StringJoiner(", ");
+        BOOSTER_STATE_BITS.forEach((bit, name) -> { if ((state & bit) != 0) sj.add(name); });
+        return sj.length() == 0 ? "–" : sj.toString();
     }
 
     private void evaluateCan() {

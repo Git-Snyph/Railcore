@@ -136,6 +136,20 @@ public class Z21ProtocolTest {
         assertEquals(0, r.address2());
     }
 
+    /** LAN_CAN_BOOSTER_SYSTEMSTATE_CHGD nach Spezifikation V1.13 Kap. 10.2.3 (Aufbau, kein Beispiel im Dokument). */
+    public void testDecodeCanBoosterState() {
+        // NId 0xC101, Ausgang 2, Zustand Kurzschluss + vom Nutzer abgeschaltet (0x0120), 18000 mV, 1500 mA
+        var b = (Z21Message.CanBoosterState) one("0E 00 CA 00 01 C1 02 00 20 01 50 46 DC 05");
+        assertEquals(0xC101, b.networkId());
+        assertEquals(2, b.outputPort());
+        assertEquals(Z21Protocol.BS_SHORT_CIRCUIT | Z21Protocol.BS_OUTPUT_DISABLED, b.state());
+        assertEquals(18000, b.vccVoltageMv());
+        assertEquals(1500, b.currentMa());
+        // zu kurz: nicht raten, sondern unbekannt
+        assertEquals(Z21Message.Unknown.class, one("0D 00 CA 00 01 C1 02 00 20 01 50 46 DC").getClass());
+        assertEquals("08 00 50 00 00 00 02 00", Z21Protocol.hex(Z21Protocol.setBroadcastFlags(Z21Protocol.BC_CAN_BOOSTER)));
+    }
+
     public void testDecodeRailComData() {
         var r = (Z21Message.RailComData) one("11 00 88 00 03 00 10 00 00 00 02 00 00 05 20 7F 00");
         assertEquals(3, r.locoAddress());

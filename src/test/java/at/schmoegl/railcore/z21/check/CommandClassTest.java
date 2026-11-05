@@ -42,6 +42,18 @@ public class CommandClassTest {
         assertEquals(CommandClass.ACTIVE, CommandClass.of(new byte[]{1}));
     }
 
+    /**
+     * Booster-Schaltbefehle aus Spezifikation V1.13 sind nie passiv: LAN_CAN_BOOSTER_SET_TRACKPOWER (0xCB, über die
+     * Z21) und LAN_BOOSTER_SET_POWER (0xB2, direkt am Booster über zLink). Auch die Namens-Befehle (0xC8/0xC9) stehen
+     * nicht auf der Positivliste.
+     */
+    public void testBoosterCommandsAreNeverPassive() {
+        assertEquals(CommandClass.ACTIVE, CommandClass.of(new byte[]{0x07, 0, (byte) 0xCB, 0, 0x01, (byte) 0xC1, 0x00}));
+        assertEquals(CommandClass.ACTIVE, CommandClass.of(new byte[]{0x07, 0, (byte) 0xCB, 0, 0x01, (byte) 0xC1, (byte) 0xFF}));
+        assertEquals(CommandClass.ACTIVE, CommandClass.of(new byte[]{0x06, 0, (byte) 0xB2, 0, 0x02, 0x01}));
+        assertEquals(CommandClass.ACTIVE, CommandClass.of(new byte[]{0x06, 0, (byte) 0xC8, 0, 0x01, (byte) 0xC1}));
+    }
+
     /** 0x10/0x11 sind nur bei 28 Fahrstufen Halt; bei 128 Fahrstufen sind es Fahrstufen 15/16. */
     public void testSpeedByteDependsOnStepMode() {
         assertEquals(CommandClass.ACTIVE, CommandClass.of(Z21Protocol.setLocoDrive(3, 15, SpeedSteps.S128, Direction.REVERSE)));
