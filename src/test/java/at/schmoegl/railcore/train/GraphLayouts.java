@@ -21,7 +21,9 @@ import java.util.Map;
 
 /**
  * Synthetische Testanlagen für Zugposition, Ausdehnung und Fahrauftrag (Schritt C1), im Test aufgebaut wie in B1/B2.
- * Alle Maße sind synthetische Testwerte, keine Herstellerangaben. Ansprechverzögerung aller Abschnitte 50 ms.
+ * Alle Maße sind synthetische Testwerte, keine Herstellerangaben. Ansprech- und Freimeldeverzögerung aller
+ * Abschnitte nach dem Roco-Standard des Z21 Detector 10808 (Entscheidung 45): Einschaltverzögerung 160 ms,
+ * Ausschaltverzögerung 1160 ms (Bedienungsanleitung 10808, Kapitel „Eigenschaften“).
  */
 final class GraphLayouts {
 
@@ -35,7 +37,10 @@ final class GraphLayouts {
     /** Grenzzeichen Abzweig 250 mm ab der Spitze: 45,3 mm hinter dem Weichenende. */
     static final TurnoutBranches W_BR = new TurnoutBranches(W_STRAIGHT, W_DIV, 150, 250);
     static final TrackPiece.TurnoutPiece W = new TrackPiece.TurnoutPiece("TEST-W", TrackPiece.Hand.LEFT, W_BR);
-    static final int RESPONSE_MS = 50;
+    /** Roco-Standard Z21 Detector 10808: Einschaltverzögerung (Ansprechverzögerung). */
+    static final int RESPONSE_MS = 160;
+    /** Roco-Standard Z21 Detector 10808: Ausschaltverzögerung (Freimeldeverzögerung). */
+    static final int RELEASE_MS = 1160;
 
     static final TurnoutStates W_STRAIGHT_SET = TurnoutStates.of(Map.of("w", TurnoutPosition.STRAIGHT));
     static final TurnoutStates W_DIVERGING_SET = TurnoutStates.of(Map.of("w", TurnoutPosition.DIVERGING));
@@ -43,7 +48,7 @@ final class GraphLayouts {
     static TrackRange full(TrackGraph g, String edge) { return new TrackRange(edge, 0, g.edge(edge).lengthMm()); }
 
     static DetectionSection section(String id, int contact, int district, TrackRange... ranges) {
-        return DetectionSection.of(id, contact, district, RESPONSE_MS, 500, ranges);
+        return DetectionSection.of(id, contact, district, RESPONSE_MS, RELEASE_MS, ranges);
     }
 
     static TrackLayout requireClean(TrackLayout l) {

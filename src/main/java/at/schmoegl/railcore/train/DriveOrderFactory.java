@@ -28,9 +28,11 @@ import java.util.OptionalDouble;
  * {@link DriveOrder}, {@link StopPlanner} und der Fahrer bleiben unverändert.
  *
  * <p><b>Meldepunkte</b> stammen aus den Abschnittsgrenzen des Gleisplans je Fahrtrichtung ({@link TrackLayout#reportPoints},
- * auch überschriebene). Ein Belegtmelder spricht an, wenn die erste stromabnehmende Achse die Grenze erreicht; die
- * Zugspitze ist dann um deren Abstand weiter. Bis Fahrzeugdaten aus der Datenbank vorliegen (MobaDB, Lastenheft 9),
- * gilt ein vorläufiger Standardwert ({@link Settings#leadingPickupOffsetMm}). Weggelassen werden Meldepunkte, die
+ * auch überschriebene). Eine Überschreibung betrifft ausschließlich die Gleislage der elektrischen Grenze (z. B. eine
+ * Trennstelle nicht am Stoß); Fahrzeugmaße gehören dort nicht hinein, sonst zählt der Achsabstand doppelt. Ein
+ * Belegtmelder spricht an, wenn die erste stromabnehmende Achse die Grenze erreicht; die Zugspitze ist dann um deren
+ * Abstand weiter. Bis Fahrzeugdaten vorliegen (Fahrzeugdatenbank/Zugverband, Lastenheft 9; MobaDB nur als
+ * Importquelle), gilt ein vorläufiger Standardwert ({@link Settings#leadingPickupOffsetMm}). Weggelassen werden Meldepunkte, die
  * hinter der Spitze oder hinter dem Ende der Freigabe liegen, und solche, deren Abschnitt in diesem Moment noch vom
  * eigenen Zug belegt ist (er spräche nicht erneut an; der Fahrer hielte sonst wegen eines „fehlenden“ Meldepunkts).
  *
