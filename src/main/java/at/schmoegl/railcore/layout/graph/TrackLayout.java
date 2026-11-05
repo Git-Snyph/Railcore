@@ -2,6 +2,7 @@ package at.schmoegl.railcore.layout.graph;
 
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
@@ -129,6 +130,33 @@ public final class TrackLayout {
         Set<Integer> out = new LinkedHashSet<>();
         for (String id : index.districtCoverage.ownersAt(location.edgeId(), location.offsetMm())) out.add(Integer.valueOf(id));
         return Set.copyOf(out);
+    }
+
+    /**
+     * Meldeabschnitte, die sich mit dem Bereich überschneiden (mehr als {@link Coverage#TOL}; bloßes Berühren an
+     * einer Grenze zählt nicht). Grundlage für die Belegung durch einen Zug (Schritt C1).
+     */
+    public List<DetectionSection> sectionsOverlapping(TrackRange range) {
+        List<DetectionSection> out = new ArrayList<>();
+        for (String id : index.sectionCoverage.ownersOverlapping(range.edgeId(), range.fromMm(), range.toMm()))
+            out.add(index.sections.get(id));
+        return List.copyOf(out);
+    }
+
+    /** Blöcke, die sich mit dem Bereich überschneiden (Berühren zählt nicht, wie {@link #sectionsOverlapping}). */
+    public List<Block> blocksOverlapping(TrackRange range) {
+        List<Block> out = new ArrayList<>();
+        for (String id : index.blockCoverage.ownersOverlapping(range.edgeId(), range.fromMm(), range.toMm()))
+            out.add(index.blocks.get(id));
+        return List.copyOf(out);
+    }
+
+    /** Bezirke, die sich mit dem Bereich überschneiden (Berühren zählt nicht, wie {@link #sectionsOverlapping}). */
+    public Set<Integer> districtsOverlapping(TrackRange range) {
+        Set<Integer> out = new LinkedHashSet<>();
+        for (String id : index.districtCoverage.ownersOverlapping(range.edgeId(), range.fromMm(), range.toMm()))
+            out.add(Integer.valueOf(id));
+        return Collections.unmodifiableSet(out);
     }
 
     /** Lage des Blocks im Graph; leer, wenn der Block unbekannt ist oder einen Geometriefehler hat. */
