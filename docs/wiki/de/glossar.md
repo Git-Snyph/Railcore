@@ -28,7 +28,7 @@ Verbindlich für Anleitung, Wiki, Oberfläche und Übersetzungen. Neue Begriffe 
 | Meldepunkt | detection point | Stelle, an der ein Melder anspricht und die Position abgeglichen wird |
 | Melderabfrage | detector status query | Abfrage aller Melderzustände bei der Zentrale, auch unveränderter; Grundlage für das Erkennen stummer Melder |
 | Nothalt | emergency stop | Sofortiger Halt, wird nie automatisch aufgehoben |
-| Oberleitung | catenary | Angabe je Gleisstück, ob eine Oberleitung vorhanden ist; Grundlage dafür, wo Züge mit elektrischer Traktion fahren dürfen |
+| Oberleitung | catenary | Angabe, ob eine Oberleitung vorhanden ist; Standardwert für die ganze Anlage, je Gleisstück überschreibbar; Grundlage dafür, wo Züge mit elektrischer Traktion fahren dürfen |
 | Position unsicher (Zug) | position unsafe (train) | Kennzeichnung nach Kurzschluss oder Spannungsausfall: der Zug darf nur bremsen und halten, bis der Bediener sie aufhebt |
 | Positionsunsicherheit | position uncertainty | Wie weit die gerechnete Position von der wahren abweichen kann; wächst mit der Strecke seit dem letzten Abgleich |
 | Quittieren | acknowledge | Bedienhandlung, die einen Nothalt aufhebt und zum Wiederanlauf führt |
@@ -37,7 +37,8 @@ Verbindlich für Anleitung, Wiki, Oberfläche und Übersetzungen. Neue Begriffe 
 | Sicherheitsabstand, größerer (Zug) | increased safety margin (train) | Kennzeichnung, wenn eine Lok anders fuhr als gesendet; bleibt, bis der Bediener sie aufhebt |
 | Software Motion Control | software motion control | Standard: Anfahren und Bremsen rechnet die Steuerung, der Decoder verzögert nicht (CV3/CV4 = 0) |
 | Decoder Motion Control | decoder motion control | Ausnahme je Lok: der Decoder verzögert selbst |
-| Spurweite | track gauge | Abstand der Schienen in mm (z. B. 16,5 für H0); Standardwert für die ganze Anlage, je Gleisstück überschreibbar, mehrere bei Mehrschienengleis |
+| Spur (nach NEM 010) | gauge designation (NEM 010) | Nenngröße mit Zusatzbuchstabe für die Vorbildspurweite (m, e, i, p), z. B. H0, H0m, 0e; legt Spurweite und Maßstab fest |
+| Spurweite | track gauge | Abstand der Schienen in mm; im Gleisplan als Spur nach NEM 010 oder als „sonstige“ mit eigenem mm-Wert angegeben; Standardwert für die ganze Anlage, je Gleisstück überschreibbar, mehrere bei Mehrschienengleis |
 | Stellvertreter-Adresse | proxy address | Adresse 9000–9999 für Handregler an der Z21; RailCore fährt daraus geprüft den echten Zug |
 | Trennstelle | isolating joint | Stoß zweier Gleisstücke mit elektrischer Trennung, z. B. zwischen Meldeabschnitten |
 | unbekannt (Melder) | unknown (detector) | Zustand nach dem Start, bis der Melder eine Meldung geschickt hat; gilt nie als frei |

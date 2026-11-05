@@ -26,6 +26,7 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.OptionalDouble;
 import java.util.OptionalInt;
 import java.util.Set;
@@ -44,9 +45,10 @@ import java.util.function.Supplier;
  * gemeldet ({@link TrackPlanException}).
  *
  * <p>Version 1 wird weiter gelesen und auf Version {@value TrackPlan#FORMAT_VERSION} gehoben; die Felder ab
- * Version 2 (Spurweite {@code gaugeMm}/{@code gaugesMm}, Oberleitung {@code catenary}, Wende-/Halteverbot
- * {@code noReversing}/{@code noStopping}, Bahnsteigseite {@code platformSide}, Entscheidung 46) sind dort unbekannt.
- * Sie sind alle optional; fehlen sie, gilt „keine Angabe“ ohne Einschränkung.
+ * Version 2 (Spurweite {@code gauge}/{@code gauges} nach NEM 010, Oberleitung {@code catenary} für Anlage und Stück,
+ * Wende-/Halteverbot {@code noReversing}/{@code noStopping}, Bahnsteigseite {@code platformSide}, Entscheidung 46)
+ * sind dort unbekannt. Sie sind alle optional; fehlen sie, gilt der Anlagenstandard bzw. „keine Angabe“ ohne
+ * Einschränkung. „Keine Angabe“ ({@code UNSPECIFIED}) darf nicht ausdrücklich in der Datei stehen.
  *
  * <p>Schreiben ist verlustfrei: {@code parse(write(p)).equals(p)}. Optionale Angaben mit Standardwert werden
  * weggelassen; Sicherheitsangaben (erlaubte Richtungen, {@code reversingLoop}, {@code hardwareVerified}) und alle
@@ -58,7 +60,7 @@ public final class TrackPlanJson {
     private TrackPlanJson() {}
 
     /** Felder jedes verlegten Stücks ab Formatversion 2 (Entscheidung 46, Option A). */
-    private static final String[] PIECE_V2_KEYS = {"gaugesMm", "catenary"};
+    private static final String[] PIECE_V2_KEYS = {"gauges", "catenary"};
 
     // ============================================================================================================
     // Lesen
@@ -248,10 +250,12 @@ public final class TrackPlanJson {
             fileVersion = version;
             root.allow(keys(new String[] {"formatVersion", "name", "recommendedSectionsPerBlock", "catalog", "pieces",
                     "connections", "sections", "blocks", "holdingAreas", "districts", "signals", "points",
-                    "turnoutAddresses"}, "gaugeMm"));
+                    "turnoutAddresses"}, "gauge", "catenary"));
             String name = root.optStr("name", "");
             int recommended = root.optInt("recommendedSectionsPerBlock").orElse(TrackPlan.DEFAULT_SECTIONS_PER_BLOCK);
-            OptionalDouble gauge = root.optNum("gaugeMm");
+            Optional<Gauge> gauge = root.has("gauge")
+                    ? Optional.ofNullable(gaugeValue(root.m.get("gauge"), root.field("gauge"))) : Optional.empty();
+            Catenary planCatenary = optEnum(root, "catenary", Catenary.class, Catenary.UNSPECIFIED);
 
             List<TrackPiece> catalog = new ArrayList<>();
             for (Obj o : elements(root.arr("catalog"), "catalog")) {
@@ -285,7 +289,7 @@ public final class TrackPlanJson {
             // ältere Version: beim Lesen auf die aktuelle gehoben (die neuen Felder fehlen dort und haben Standardwerte)
             return build("Datei", before, () -> new TrackPlan(TrackPlan.FORMAT_VERSION, name, catalog, pieces,
                     connections, sections, blocks, holdingAreas, districts, signals, stops, speeds, reports, addresses,
-                    recommended, gauge));
+                    recommended, gauge, planCatenary));
         }
 
         static <T> void add(List<T> list, T value) { if (value != null) list.add(value); }
@@ -304,11 +308,52 @@ public final class TrackPlanJson {
             return all;
         }
 
-        /** Optionaler Aufzählungswert; fehlt das Feld, gilt {@code def}. */
+        /**
+         * Optionaler Aufzählungswert; fehlt das Feld, gilt {@code def}. {@code def} selbst (z. B. {@code UNSPECIFIED})
+         * darf nicht ausdrücklich in der Datei stehen: „keine Angabe“ heißt Feld weglassen, damit es genau eine
+         * Schreibweise gibt.
+         */
         <E extends Enum<E>> E optEnum(Obj o, String k, Class<E> type, E def) {
             if (!o.has(k)) return def;
             E e = o.enumValue(k, type);
+            if (e == def) {
+                problem(o.field(k), "\"" + def.name() + "\" nicht ausdrücklich angeben, sondern das Feld weglassen");
+                return def;
+            }
             return e == null ? def : e;
+        }
+
+        /**
+         * Spurweite: NEM-010-Bezeichnung als Text ({@code "H0m"}) oder
+         * {@code {"gauge": "CUSTOM", "customGaugeMm": 10.5}}; {@code null} bei Fehler (gemeldet).
+         */
+        Gauge gaugeValue(Object v, String path) {
+            if (v instanceof String s) {
+                if (s.equals(NemGauge.CUSTOM.nemName())) {
+                    problem(path, "CUSTOM nur als Objekt {\"gauge\": \"CUSTOM\", \"customGaugeMm\": …}");
+                    return null;
+                }
+                Optional<NemGauge> g = NemGauge.byName(s);
+                if (g.isEmpty()) {
+                    List<String> names = new ArrayList<>();
+                    for (NemGauge n : NemGauge.values()) names.add(n.nemName());
+                    problem(path, "unbekannte Spur \"" + s + "\" (erlaubt nach NEM 010: " + String.join(", ", names) + ")");
+                    return null;
+                }
+                return Gauge.of(g.get());
+            }
+            if (v instanceof Map<?, ?>) {
+                Obj o = toObj(v, path);
+                int before = problems.size();
+                o.allow("gauge", "customGaugeMm");
+                String g = o.str("gauge");
+                if (problems.size() == before && !g.equals(NemGauge.CUSTOM.nemName()))
+                    problem(o.field("gauge"), "Objektform nur für CUSTOM; eine NEM-Spur als Text angeben, gefunden: \"" + g + "\"");
+                double mm = o.num("customGaugeMm");
+                return build(path, before, () -> Gauge.custom(mm));
+            }
+            problem(path, "Spurname (Text) oder CUSTOM-Objekt erwartet, gefunden: " + Json.write(v));
+            return null;
         }
 
         /** Optionale Liste von Blockrichtungen; doppelte Einträge zählen einmal (wie {@code directions}). */
@@ -325,17 +370,17 @@ public final class TrackPlanJson {
         /** Spurweite und Oberleitung eines verlegten Stücks (Felder ab Version 2, beide optional). */
         TrackPlan.PieceProperties pieceProperties(Obj o) {
             int before = problems.size();
-            List<Double> gauges = new ArrayList<>();
-            if (o.has("gaugesMm")) {
-                List<Object> raw = o.arr("gaugesMm");
+            List<Gauge> gauges = new ArrayList<>();
+            if (o.has("gauges")) {
+                List<Object> raw = o.arr("gauges");
                 if (raw.isEmpty() && problems.size() == before)
-                    problem(o.field("gaugesMm"), "mindestens eine Spurweite nötig (Feld weglassen = Spurweite der Anlage)");
+                    problem(o.field("gauges"), "mindestens eine Spurweite nötig (Feld weglassen = Spurweite der Anlage)");
                 for (int i = 0; i < raw.size(); i++) {
-                    String where = o.field("gaugesMm") + "[" + i + "]";
-                    if (!(raw.get(i) instanceof Double d) || !Double.isFinite(d))
-                        problem(where, "endliche Zahl erwartet, gefunden: " + Json.write(raw.get(i)));
-                    else if (gauges.contains(d)) problem(where, "Spurweite " + Json.write(d) + " doppelt");
-                    else gauges.add(d);
+                    String where = o.field("gauges") + "[" + i + "]";
+                    Gauge g = gaugeValue(raw.get(i), where);
+                    if (g == null) continue;
+                    if (gauges.contains(g)) problem(where, "Spurweite " + g + " doppelt");
+                    else gauges.add(g);
                 }
             }
             Catenary catenary = optEnum(o, "catenary", Catenary.class, Catenary.UNSPECIFIED);
@@ -725,7 +770,8 @@ public final class TrackPlanJson {
         root.put("formatVersion", p.formatVersion());
         if (!p.name().isEmpty()) root.put("name", p.name());
         root.put("recommendedSectionsPerBlock", p.recommendedSectionsPerBlock());
-        if (p.gaugeMm().isPresent()) root.put("gaugeMm", p.gaugeMm().getAsDouble());
+        p.gauge().ifPresent(g -> root.put("gauge", gauge(g)));
+        if (p.catenary() != Catenary.UNSPECIFIED) root.put("catenary", p.catenary().name());
         root.put("catalog", map(p.catalog(), TrackPlanJson::catalogEntry));
         root.put("pieces", map(p.pieces(), TrackPlanJson::piece));
         root.put("connections", map(p.connections(), TrackPlanJson::connection));
@@ -827,7 +873,7 @@ public final class TrackPlanJson {
         }
         if (p.lengthUnknown()) m.put("lengthUnknown", true);
         TrackPlan.PieceProperties props = p.properties();
-        if (!props.gaugesMm().isEmpty()) m.put("gaugesMm", new ArrayList<Object>(props.sortedGaugesMm()));
+        if (!props.gauges().isEmpty()) m.put("gauges", map(props.sortedGauges(), TrackPlanJson::gauge));
         if (props.catenary() != Catenary.UNSPECIFIED) m.put("catenary", props.catenary().name());
         return m;
     }
@@ -867,6 +913,12 @@ public final class TrackPlanJson {
         if (!b.noStopping().isEmpty()) m.put("noStopping", directions(b.noStopping()));
         if (b.platformSide() != PlatformSide.UNSPECIFIED) m.put("platformSide", b.platformSide().name());
         return m;
+    }
+
+    /** Spurweite: NEM-Bezeichnung als Text, CUSTOM als Objekt mit eigenem mm-Wert. */
+    private static Object gauge(Gauge g) {
+        return g.nem() == NemGauge.CUSTOM ? obj("gauge", NemGauge.CUSTOM.nemName(), "customGaugeMm", g.mm())
+                : g.nem().nemName();
     }
 
     /** Richtungen in fester Reihenfolge der Aufzählung. */

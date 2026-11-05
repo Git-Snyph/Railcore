@@ -5,10 +5,10 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.OptionalDouble;
 import java.util.OptionalInt;
 import java.util.Set;
-import java.util.TreeSet;
 import java.util.regex.Pattern;
 
 /**
@@ -23,22 +23,23 @@ import java.util.regex.Pattern;
  * <p>Vorläufiges Format (Entscheidung 35), Version {@link #FORMAT_VERSION}; bis Meilenstein 3 maßgeblich, danach
  * Austauschformat neben SQLite. Version 1 wird weiter gelesen und beim Lesen auf die aktuelle Version gehoben.
  *
- * <p>Spurweite (Entscheidung 46, Option A): ein Standardwert für die ganze Anlage ({@code gaugeMm}), den ein
- * verlegtes Stück mit eigenen Spurweiten überschreiben kann ({@link PieceProperties#gaugesMm()}, mehrere bei
- * Mehrschienengleis einer Spur-in-Spur-Anlage). Angabe in mm (z. B. 16,5 für H0), nicht als Spurname, weil Namen
- * je Land und Norm verschieden sind (H0m, HOn3 …) und alle anderen Maße der Datei ebenfalls in mm stehen.
+ * <p>Spurweite und Oberleitung (Entscheidung 46, Option A): je ein Standardwert für die ganze Anlage
+ * ({@code gauge}, {@code catenary}), den ein verlegtes Stück mit eigenen Angaben überschreiben kann
+ * ({@link PieceProperties}; Spurweiten als Liste, mehrere bei Mehrschienengleis einer Spur-in-Spur-Anlage). Spurweite
+ * als NEM-010-Spur ({@link NemGauge}) oder {@link NemGauge#CUSTOM} mit eigenem mm-Wert (Entscheidung des Nutzers).
  *
  * @param name                        Anzeigename der Anlage ("" = ohne)
  * @param catalog                     Gleisstück-Typen in Dateireihenfolge
  * @param recommendedSectionsPerBlock empfohlene Mindestzahl Meldeabschnitte je Block (Standard 3)
- * @param gaugeMm                     Spurweite der Anlage in mm; leer = keine Angabe
+ * @param gauge                       Spurweite der Anlage; leer = keine Angabe
+ * @param catenary                    Oberleitung der Anlage ({@link Catenary#UNSPECIFIED} = keine Angabe)
  */
 public record TrackPlan(int formatVersion, String name, List<TrackPiece> catalog, List<PlacedPiece> pieces,
                         List<Connection> connections, List<PlanSection> sections, List<Block> blocks,
                         List<HoldingArea> holdingAreas, List<PlanDistrict> districts, List<BlockSignal> signals,
                         List<StopPoint> stopPoints, List<SpeedChangePoint> speedChangePoints,
                         List<ReportPointOverride> reportPointOverrides, List<TurnoutAddress> turnoutAddresses,
-                        int recommendedSectionsPerBlock, OptionalDouble gaugeMm) {
+                        int recommendedSectionsPerBlock, Optional<Gauge> gauge, Catenary catenary) {
 
     /** Formatversion, die dieser Stand schreibt. */
     public static final int FORMAT_VERSION = 2;
@@ -68,17 +69,25 @@ public record TrackPlan(int formatVersion, String name, List<TrackPiece> catalog
         turnoutAddresses = List.copyOf(turnoutAddresses);
         if (recommendedSectionsPerBlock < 1)
             throw new IllegalArgumentException("Empfohlene Abschnittszahl muss mindestens 1 sein: " + recommendedSectionsPerBlock);
-        if (gaugeMm == null) gaugeMm = OptionalDouble.empty();
-        if (gaugeMm.isPresent()) requireGauge(gaugeMm.getAsDouble(), "Spurweite der Anlage");
+        if (gauge == null) gauge = Optional.empty();
+        if (catenary == null) catenary = Catenary.UNSPECIFIED;
     }
 
     /**
-     * Wirksame Spurweiten eines verlegten Stücks in mm: die eigenen, sonst die der Anlage, sonst leer (keine Angabe).
+     * Wirksame Spurweiten eines verlegten Stücks: die eigenen, sonst die der Anlage, sonst leer (keine Angabe).
      * Reine Auskunft aus der Datei, keine Gleiswahl.
      */
-    public Set<Double> gaugesMmOf(PlacedPiece piece) {
-        if (!piece.properties().gaugesMm().isEmpty()) return piece.properties().gaugesMm();
-        return gaugeMm.isPresent() ? Set.of(gaugeMm.getAsDouble()) : Set.of();
+    public Set<Gauge> gaugesOf(PlacedPiece piece) {
+        if (!piece.properties().gauges().isEmpty()) return piece.properties().gauges();
+        return gauge.map(Set::of).orElse(Set.of());
+    }
+
+    /**
+     * Wirksame Oberleitung eines verlegten Stücks: die eigene Angabe, sonst die der Anlage, sonst
+     * {@link Catenary#UNSPECIFIED}. Reine Auskunft aus der Datei, keine Gleiswahl.
+     */
+    public Catenary catenaryOf(PlacedPiece piece) {
+        return piece.properties().catenary() != Catenary.UNSPECIFIED ? piece.properties().catenary() : catenary;
     }
 
     // --- Eigenschaften eines verlegten Stücks -------------------------------------------------------------------
@@ -87,25 +96,20 @@ public record TrackPlan(int formatVersion, String name, List<TrackPiece> catalog
      * Angaben zu einem verlegten Stück ohne Einfluss auf Graph und Länge (Entscheidung 46, Option A), Grundlage
      * für die spätere Gleiswahl nach Spurweite und Traktion (Meilenstein 4).
      *
-     * @param gaugesMm eigene Spurweiten in mm (mehrere bei Mehrschienengleis); leer = Spurweite der Anlage
-     * @param catenary Oberleitung über dem Stück
+     * @param gauges   eigene Spurweiten (mehrere bei Mehrschienengleis); leer = Spurweite der Anlage
+     * @param catenary eigene Angabe zur Oberleitung; {@link Catenary#UNSPECIFIED} = Angabe der Anlage
      */
-    public record PieceProperties(Set<Double> gaugesMm, Catenary catenary) {
+    public record PieceProperties(Set<Gauge> gauges, Catenary catenary) {
         /** Keine eigenen Angaben. */
         public static final PieceProperties NONE = new PieceProperties(Set.of(), Catenary.UNSPECIFIED);
 
         public PieceProperties {
-            gaugesMm = gaugesMm == null ? Set.of() : Set.copyOf(gaugesMm);
-            for (double g : gaugesMm) requireGauge(g, "Spurweite");
+            gauges = gauges == null ? Set.of() : Set.copyOf(gauges);
             if (catenary == null) catenary = Catenary.UNSPECIFIED;
         }
 
-        /** Eigene Spurweiten aufsteigend (Reihenfolge in der Datei). */
-        public List<Double> sortedGaugesMm() { return List.copyOf(new TreeSet<>(gaugesMm)); }
-    }
-
-    private static void requireGauge(double mm, String what) {
-        if (!(mm > 0) || !Double.isFinite(mm)) throw new IllegalArgumentException(what + " muss größer 0 sein: " + mm);
+        /** Eigene Spurweiten in fester Reihenfolge ({@link Gauge#ORDER}, so in der Datei). */
+        public List<Gauge> sortedGauges() { return gauges.stream().sorted(Gauge.ORDER).toList(); }
     }
 
     // --- verlegte Stücke ----------------------------------------------------------------------------------------

@@ -6,7 +6,7 @@ Physik und Logik werden getrennt: Ein **Meldeabschnitt** ist ein Kabel am Melder
 
 | Objekt | Bedeutung | Wichtige Eigenschaften |
 | --- | --- | --- |
-| Gleisgraph | Gleisstücke (Kanten) zwischen Knoten; Grundlage für Wegsuche und Position | Länge in mm, Verbindungen, Weichenzweige; je Gleisstück optional Spurweite in mm (Standardwert für die ganze Anlage, je Stück überschreibbar, mehrere bei Mehrschienengleis) und Oberleitung (vorhanden, nicht vorhanden, keine Angabe) |
+| Gleisgraph | Gleisstücke (Kanten) zwischen Knoten; Grundlage für Wegsuche und Position | Länge in mm, Verbindungen, Weichenzweige; optional Spurweite als Spur nach NEM 010 (z. B. H0, H0m, 0e) oder „sonstige“ mit eigenem Wert in mm, und Oberleitung (vorhanden, nicht vorhanden); beides als Standardwert für die ganze Anlage, je Gleisstück überschreibbar (Spurweite mehrfach bei Mehrschienengleis) |
 | Meldeabschnitt | physisch isolierter Abschnitt an einem Melder-Eingang | Kontakt, Lage im Graph (von/bis mm), Ansprech- und Freimeldeverzögerung, Booster-Bezirk |
 | Block | logische Einheit, in der höchstens ein Zug steht (Ausnahme: Nachrücken, Rangieren) | Länge, Abschnitte (mind. 1, empfohlen 3), erlaubte Richtungen, Zugarten, Mindest-/Höchstzuglänge; optional Wendeverbot und Halteverbot, je Fahrtrichtung getrennt, und Bahnsteigseite (links, rechts, beide, kein Bahnsteig; gesehen in Richtung A → B) |
 | Meldepunkt | Stelle, an der ein Abschnitt anspricht; Abgleichpunkt für die Position | Lage in mm, je Fahrtrichtung |
@@ -21,7 +21,7 @@ Physik und Logik werden getrennt: Ein **Meldeabschnitt** ist ein Kabel am Melder
 | Drehscheibe | Bühne als Block, Abgänge zu Blöcken | Decoder, Positionen, Drehrichtung, Verriegelung der Zufährten |
 | Gleissperre, Baustelle | gesperrte Ressource | Grund, Zeitraum, wer gesperrt hat |
 
-Spurweite, Oberleitung, Wende- und Halteverbot und Bahnsteigseite sind Angaben für die Gleiswahl (Kapitel 5, Betriebskonzept): Fehlt eine Angabe, schränkt sie nichts ein. Ein Halteverbot betrifft nur geplante Halte; ein Halt aus Sicherheitsgründen ist immer erlaubt.
+Spurweite, Oberleitung, Wende- und Halteverbot und Bahnsteigseite sind Angaben für die Gleiswahl (Kapitel 5, Betriebskonzept): Fehlt die Angabe am Gleisstück, gilt der Standardwert der Anlage; fehlt auch dieser bzw. fehlt eine Angabe ohne Anlagenwert, schränkt sie nichts ein. Ein Halteverbot betrifft nur geplante Halte; ein Halt aus Sicherheitsgründen ist immer erlaubt.
 
 Der Gleisplan wird mit einer **Prüfung** geladen: Fehler (Block ohne Melder, doppelte Adresse, unbekannte Referenz) verhindern den Automatikbetrieb, Hinweise (weniger als 3 Melder, Länge unbekannt) werden angezeigt.
 

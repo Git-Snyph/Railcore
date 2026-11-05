@@ -3,14 +3,16 @@
 // zum Ausziehgleis führt (beide mit Prellbock); Ostkopf: Weiche W2. Ringstrecke Ost – Gegengerade – West.
 // Gleis 2 ist wegen der DKW gekürzt (eigene Länge an g2c). Die DKW-Stelllogik ist die vorläufige Annahme und
 // ausdrücklich nicht an der Hardware geprüft (Entscheidung 41).
-// Angaben ab Formatversion 2 (Entscheidung 46): Spurweite H0 für die Anlage, Ausziehgleis als Mehrschienengleis
-// H0/H0m, Gleis 1 mit und Ladegleis ohne Oberleitung, Bahnsteigseiten, Wende- und Halteverbot auf der Strecke Ost.
+// Angaben ab Formatversion 2 (Entscheidung 46): Spur H0 und Oberleitung für die ganze Anlage; DKW und
+// Ausziehgleis als Mehrschienengleis H0/H0m, das letzte Stück zusätzlich mit einer Spurweite außerhalb NEM 010
+// (CUSTOM 10,5 mm); Ladegleis und DKW ohne Oberleitung; Bahnsteigseiten, Wende- und Halteverbot auf der Strecke Ost.
 // Alle Maße sind synthetische Testwerte, keine Herstellermaße.
 {
   "formatVersion": 2,
   "name": "Bahnhof mit Weichen",
   "recommendedSectionsPerBlock": 3,
-  "gaugeMm": 16.5,
+  "gauge": "H0",
+  "catenary": "PRESENT",
   "catalog": [
     {"id": "SYN-G1000", "kind": "plain", "geometry": {"kind": "straight", "lengthMm": 1000}},
     {"id": "SYN-G500", "kind": "plain", "geometry": {"kind": "straight", "lengthMm": 500}},
@@ -47,19 +49,19 @@
      "branches": {"straightLengthMm": 200, "divergingLengthMm": 204.7, "straightClearanceMm": 150, "divergingClearanceMm": 250}},
     {"id": "D1", "type": "SYN-DKW", "turnoutA": "D1a", "turnoutB": "D1b",
      "routeLengthsMm": {"A1_B1": 231, "A1_B2": 236.5, "A2_B1": 236.5, "A2_B2": 231},
-     "clearancesMm": {"A1": 100, "A2": 100, "B1": 110, "B2": 110}, "catenary": "ABSENT", "gaugesMm": [12, 16.5]},
-    {"id": "g1a", "type": "SYN-G1000", "catenary": "PRESENT"},
-    {"id": "g1b", "type": "SYN-G1000", "catenary": "PRESENT"},
-    {"id": "g1c", "type": "SYN-G1000", "catenary": "PRESENT"},
+     "clearancesMm": {"A1": 100, "A2": 100, "B1": 110, "B2": 110}, "catenary": "ABSENT", "gauges": ["H0m", "H0"]},
+    {"id": "g1a", "type": "SYN-G1000"},
+    {"id": "g1b", "type": "SYN-G1000"},
+    {"id": "g1c", "type": "SYN-G1000"},
     {"id": "g2a", "type": "SYN-G1000"},
     {"id": "g2b", "type": "SYN-G1000"},
     {"id": "g2c", "type": "SYN-G1000", "lengthMm": 769},
     {"id": "l1", "type": "SYN-G500", "catenary": "ABSENT"},
     {"id": "l2", "type": "SYN-G500", "catenary": "ABSENT"},
     {"id": "l3", "type": "SYN-G500", "catenary": "ABSENT"},
-    {"id": "a1", "type": "SYN-G500", "gaugesMm": [12, 16.5]},
-    {"id": "a2", "type": "SYN-G500", "gaugesMm": [12, 16.5]},
-    {"id": "a3", "type": "SYN-G500", "gaugesMm": [12, 16.5]}
+    {"id": "a1", "type": "SYN-G500", "gauges": ["H0m", "H0"]},
+    {"id": "a2", "type": "SYN-G500", "gauges": ["H0m", "H0"]},
+    {"id": "a3", "type": "SYN-G500", "gauges": [{"gauge": "CUSTOM", "customGaugeMm": 10.5}, "H0m", "H0"]}
   ],
   "connections": [
     {"kind": "joint", "a": "zw.B", "b": "W1.TIP"},

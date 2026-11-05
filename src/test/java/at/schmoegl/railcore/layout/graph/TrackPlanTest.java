@@ -14,6 +14,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.OptionalDouble;
 import java.util.Set;
 
@@ -366,7 +367,7 @@ public class TrackPlanTest {
         TrackPlan mismatch = new TrackPlan(1, "", good.catalog(),
                 List.of(new TrackPlan.CrossingPlacement("p", "G", TrackPiece.CrossingDimensions.symmetric(300, 300), false)),
                 good.connections(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(),
-                List.of(), 3, OptionalDouble.empty());
+                List.of(), 3, Optional.empty(), Catenary.UNSPECIFIED);
         single(TrackPlanLoader.build(mismatch).loadErrors(), Phase.REFERENCE, "Typ G passt nicht zur Art des Stücks");
     }
 
@@ -397,18 +398,23 @@ public class TrackPlanTest {
     public void testStationCarriesOptionalFields() {
         TrackPlanReport r = load("bahnhof.json");
         TrackPlan plan = r.plan().orElseThrow();
-        assertEquals(OptionalDouble.of(16.5), plan.gaugeMm());
+        assertEquals(Optional.of(Gauge.of(NemGauge.H0)), plan.gauge());
+        assertEquals(Catenary.PRESENT, plan.catenary());
         // Spurweite: eigene Angabe überschreibt die der Anlage, mehrere bei Mehrschienengleis
-        assertEquals(Set.of(12.0, 16.5), plan.gaugesMmOf(piece(plan, "a1")));
-        assertEquals(Set.of(12.0, 16.5), plan.gaugesMmOf(piece(plan, "D1")));
-        assertEquals(Set.of(16.5), plan.gaugesMmOf(piece(plan, "zo")));
-        assertEquals(Set.of(), piece(plan, "zo").properties().gaugesMm());
-        // Oberleitung je Stück, jede Stückart
-        assertEquals(Catenary.PRESENT, piece(plan, "g1a").properties().catenary());
+        Set<Gauge> dual = Set.of(Gauge.of(NemGauge.H0m), Gauge.of(NemGauge.H0));
+        assertEquals(dual, plan.gaugesOf(piece(plan, "a1")));
+        assertEquals(dual, plan.gaugesOf(piece(plan, "D1")));
+        assertEquals(Set.of(Gauge.custom(10.5), Gauge.of(NemGauge.H0m), Gauge.of(NemGauge.H0)),
+                plan.gaugesOf(piece(plan, "a3")));
+        assertEquals(Set.of(Gauge.of(NemGauge.H0)), plan.gaugesOf(piece(plan, "zo")));
+        assertEquals(Set.of(), piece(plan, "zo").properties().gauges());
+        // Oberleitung: Anlagenstandard, je Stück überschreibbar, jede Stückart
+        assertEquals(Catenary.PRESENT, plan.catenaryOf(piece(plan, "g1a")));
+        assertEquals(Catenary.UNSPECIFIED, piece(plan, "g1a").properties().catenary());
         assertEquals(Catenary.PRESENT, piece(plan, "W1").properties().catenary());
-        assertEquals(Catenary.ABSENT, piece(plan, "D1").properties().catenary());
-        assertEquals(Catenary.ABSENT, piece(plan, "l1").properties().catenary());
-        assertEquals(Catenary.UNSPECIFIED, piece(plan, "W2").properties().catenary());
+        assertEquals(Catenary.ABSENT, plan.catenaryOf(piece(plan, "D1")));
+        assertEquals(Catenary.ABSENT, plan.catenaryOf(piece(plan, "l1")));
+        assertEquals(Catenary.PRESENT, plan.catenaryOf(piece(plan, "W2")));
         // Block-Angaben kommen unverändert im geprüften Gleisplan an
         TrackLayout l = r.layout().orElseThrow();
         Block ost = l.block("Ost").orElseThrow();
@@ -435,9 +441,12 @@ public class TrackPlanTest {
         TrackPlan plan = TrackPlanJson.parse(minimal(j("'blocks': [{'id': 'B', 'sections': [],"
                 + " 'endA': {'edge': 'p', 'offsetMm': 0, 'forward': true}, 'directions': ['A_TO_B']}],"
                 + " 'points': [{'kind': 'stop', 'id': 'h', 'at': {'edge': 'p', 'offsetMm': 500, 'forward': true}}]")));
-        assertEquals(OptionalDouble.empty(), plan.gaugeMm());
+        assertEquals(Optional.empty(), plan.gauge());
+        assertEquals(Catenary.UNSPECIFIED, plan.catenary());
         assertEquals(TrackPlan.PieceProperties.NONE, plan.pieces().getFirst().properties());
-        assertEquals(Set.of(), plan.gaugesMmOf(plan.pieces().getFirst()));
+        assertEquals(Set.of(), plan.gaugesOf(plan.pieces().getFirst()));
+        // fehlt beides (Anlage und Stück), bleibt die Oberleitung ohne Angabe
+        assertEquals(Catenary.UNSPECIFIED, plan.catenaryOf(plan.pieces().getFirst()));
         Block b = plan.blocks().getFirst();
         assertEquals(Set.of(), b.noReversing());
         assertEquals(Set.of(), b.noStopping());
@@ -445,27 +454,34 @@ public class TrackPlanTest {
         assertEquals(PlatformSide.UNSPECIFIED, plan.stopPoints().getFirst().platformSide());
         // Standardwerte werden nicht geschrieben
         String written = TrackPlanJson.write(plan);
-        for (String k : List.of("gaugeMm", "gaugesMm", "catenary", "noReversing", "noStopping", "platformSide"))
+        for (String k : List.of("gauge", "catenary", "noReversing", "noStopping", "platformSide"))
             assertTrue(!written.contains(k), k + " nicht geschrieben: " + written);
     }
 
     public void testOptionalFieldsRoundTrip() {
-        String json = minimal(j("'gaugeMm': 9, 'blocks': [{'id': 'B', 'sections': [],"
+        String json = minimal(j("'gauge': {'gauge': 'CUSTOM', 'customGaugeMm': 10.5}, 'catenary': 'ABSENT',"
+                + " 'blocks': [{'id': 'B', 'sections': [],"
                 + " 'endA': {'edge': 'p', 'offsetMm': 0, 'forward': true}, 'directions': ['A_TO_B', 'B_TO_A'],"
                 + " 'noReversing': ['B_TO_A', 'B_TO_A'], 'noStopping': ['B_TO_A', 'A_TO_B'], 'platformSide': 'LEFT'}],"
                 + " 'points': [{'kind': 'stop', 'id': 'h', 'at': {'edge': 'p', 'offsetMm': 500, 'forward': false},"
                 + " 'platformSide': 'BOTH'}]"))
                 .replace("{\"id\": \"p\", \"type\": \"G\"}",
-                        "{\"id\": \"p\", \"type\": \"G\", \"gaugesMm\": [16.5, 9], \"catenary\": \"ABSENT\"}");
+                        "{\"id\": \"p\", \"type\": \"G\", \"gauges\": [\"0e\", \"H0e\"], \"catenary\": \"PRESENT\"}");
         TrackPlan plan = TrackPlanJson.parse(json);
-        assertEquals(new TrackPlan.PieceProperties(Set.of(9.0, 16.5), Catenary.ABSENT), plan.pieces().getFirst().properties());
+        assertEquals(Optional.of(Gauge.custom(10.5)), plan.gauge());
+        assertEquals(Catenary.ABSENT, plan.catenary());
+        assertEquals(new TrackPlan.PieceProperties(Set.of(Gauge.of(NemGauge.H0e), Gauge.of(NemGauge.ZERO_E)), Catenary.PRESENT),
+                plan.pieces().getFirst().properties());
+        assertEquals(Catenary.PRESENT, plan.catenaryOf(plan.pieces().getFirst())); // Stück überschreibt Anlage
         assertEquals(Set.of(Block.Direction.B_TO_A), plan.blocks().getFirst().noReversing()); // doppelt zählt einmal
         String written = TrackPlanJson.write(plan);
         assertEquals(plan, TrackPlanJson.parse(written));
         assertEquals(written, TrackPlanJson.write(TrackPlanJson.parse(written)));
         // feste Reihenfolge: Spurweiten aufsteigend, Richtungen wie in der Aufzählung
-        assertTrue(written.contains("\"gaugesMm\": [9, 16.5]"), written);
+        assertTrue(written.contains("\"gauges\": [\"H0e\", \"0e\"]"), written);
         Map<?, ?> tree = (Map<?, ?>) Json.parse(written);
+        assertEquals(Map.of("gauge", "CUSTOM", "customGaugeMm", 10.5), tree.get("gauge"));
+        assertEquals("ABSENT", tree.get("catenary"));
         assertEquals("BOTH", ((Map<?, ?>) ((List<?>) tree.get("points")).getFirst()).get("platformSide"));
         assertEquals(List.of("A_TO_B", "B_TO_A"), ((Map<?, ?>) ((List<?>) tree.get("blocks")).getFirst()).get("noStopping"));
         assertTrue(TrackPlanLoader.build(plan).loaded(), "baut");
@@ -490,7 +506,8 @@ public class TrackPlanTest {
 
     public void testVersion1RejectsNewFields() {
         // als Version 1 gekennzeichnet, aber mit Angaben ab Version 2: unbekannte Felder (Tippfehler in der Version)
-        single(loadErrors(minimal(1, "\"gaugeMm\": 16.5")), Phase.FORMAT, "Datei", "unbekanntes Feld \"gaugeMm\"");
+        single(loadErrors(minimal(1, "\"gauge\": \"H0\"")), Phase.FORMAT, "Datei", "unbekanntes Feld \"gauge\"");
+        single(loadErrors(minimal(1, "\"catenary\": \"PRESENT\"")), Phase.FORMAT, "Datei", "unbekanntes Feld \"catenary\"");
         single(loadErrors(minimal(1, "").replace("{\"id\": \"p\", \"type\": \"G\"}",
                 "{\"id\": \"p\", \"type\": \"G\", \"catenary\": \"PRESENT\"}")), Phase.FORMAT, "pieces[0] (p)",
                 "unbekanntes Feld \"catenary\"");
@@ -524,14 +541,71 @@ public class TrackPlanTest {
         single(loadErrors(minimal(j("'points': [{'kind': 'stop', 'id': 'h', 'at': {'edge': 'p', 'offsetMm': 5,"
                 + " 'forward': true}, 'platformSide': 'MITTE'}]"))), Phase.FORMAT, "points[0] (h).platformSide",
                 "unbekannter Wert \"MITTE\"");
-        // Spurweiten
-        single(loadErrors(withPiece("'gaugesMm': []")), Phase.FORMAT, "pieces[0] (p).gaugesMm", "mindestens eine Spurweite");
-        single(loadErrors(withPiece("'gaugesMm': [16.5, 16.5]")), Phase.FORMAT, "pieces[0] (p).gaugesMm[1]", "doppelt");
-        single(loadErrors(withPiece("'gaugesMm': ['H0']")), Phase.FORMAT, "pieces[0] (p).gaugesMm[0]", "endliche Zahl erwartet");
-        single(loadErrors(withPiece("'gaugesMm': [0]")), Phase.FORMAT, "pieces[0] (p)", "Spurweite muss größer 0 sein");
-        single(loadErrors(withPiece("'gaugesMm': 16.5")), Phase.FORMAT, "pieces[0] (p).gaugesMm", "Liste erwartet");
-        single(loadErrors(minimal("\"gaugeMm\": -16.5")), Phase.FORMAT, "Spurweite der Anlage muss größer 0 sein");
-        single(loadErrors(minimal("\"gaugeMm\": \"H0\"")), Phase.FORMAT, "Datei.gaugeMm", "endliche Zahl erwartet");
+        // „keine Angabe“ heißt Feld weglassen, nicht ausdrücklich UNSPECIFIED
+        single(loadErrors(withPiece("'catenary': 'UNSPECIFIED'")), Phase.FORMAT, "pieces[0] (p).catenary", "weglassen");
+        single(loadErrors(minimal(j("'catenary': 'UNSPECIFIED'"))), Phase.FORMAT, "Datei.catenary", "weglassen");
+        single(loadErrors(withBlock("'platformSide': 'UNSPECIFIED'")), Phase.FORMAT, "blocks[0] (B).platformSide", "weglassen");
+        single(loadErrors(minimal(j("'catenary': 'JA'"))), Phase.FORMAT, "Datei.catenary", "unbekannter Wert \"JA\"");
+        // Spurweiten: Liste
+        single(loadErrors(withPiece("'gauges': []")), Phase.FORMAT, "pieces[0] (p).gauges", "mindestens eine Spurweite");
+        single(loadErrors(withPiece("'gauges': ['H0', 'H0']")), Phase.FORMAT, "pieces[0] (p).gauges[1]", "H0 doppelt");
+        single(loadErrors(withPiece("'gauges': [{'gauge': 'CUSTOM', 'customGaugeMm': 10.5},"
+                + " {'gauge': 'CUSTOM', 'customGaugeMm': 10.5}]")), Phase.FORMAT, "pieces[0] (p).gauges[1]", "doppelt");
+        single(loadErrors(withPiece("'gauges': 'H0'")), Phase.FORMAT, "pieces[0] (p).gauges", "Liste erwartet");
+        single(loadErrors(withPiece("'gauges': [16.5]")), Phase.FORMAT, "pieces[0] (p).gauges[0]", "Spurname (Text) oder CUSTOM-Objekt");
+        // Spurweiten: Bezeichnung nach NEM 010, groß/klein genau, keine Zusatzschreibweisen
+        single(loadErrors(withPiece("'gauges': ['HO']")), Phase.FORMAT, "pieces[0] (p).gauges[0]", "unbekannte Spur \"HO\"", "H0m");
+        single(loadErrors(minimal(j("'gauge': 'h0'"))), Phase.FORMAT, "Datei.gauge", "unbekannte Spur \"h0\"");
+        single(loadErrors(minimal(j("'gauge': 'G'"))), Phase.FORMAT, "unbekannte Spur \"G\"");
+        single(loadErrors(minimal(j("'gauge': 'H0n3'"))), Phase.FORMAT, "unbekannte Spur \"H0n3\"");
+        single(loadErrors(minimal(j("'gauge': 'H0f'"))), Phase.FORMAT, "unbekannte Spur \"H0f\"");
+        // Spurweiten: CUSTOM nur mit eigenem mm-Wert, eigener mm-Wert nur bei CUSTOM
+        single(loadErrors(minimal(j("'gauge': 'CUSTOM'"))), Phase.FORMAT, "Datei.gauge", "CUSTOM nur als Objekt");
+        single(loadErrors(minimal(j("'gauge': {'gauge': 'CUSTOM'}"))), Phase.FORMAT, "Datei.gauge",
+                "Pflichtfeld \"customGaugeMm\" fehlt");
+        single(loadErrors(minimal(j("'gauge': {'gauge': 'H0', 'customGaugeMm': 16.5}"))), Phase.FORMAT,
+                "Datei.gauge.gauge", "Objektform nur für CUSTOM");
+        single(loadErrors(minimal(j("'gauge': {'gauge': 'CUSTOM', 'customGaugeMm': 0}"))), Phase.FORMAT, "Datei.gauge",
+                "eigene Spurweite muss größer 0 sein");
+        single(loadErrors(minimal(j("'gauge': {'gauge': 'CUSTOM', 'customGaugeMm': 10.5, 'name': 'H0n3'}"))), Phase.FORMAT,
+                "Datei.gauge", "unbekanntes Feld \"name\"");
+    }
+
+    public void testNemGaugesMatchNem010() {
+        // Stichproben gegen NEM 010 (Ausgabe 2011, Tabelle 1): Spurweite in mm und Maßstab
+        Object[][] known = {
+                {"Z", 6.5, 220.0}, {"N", 9.0, 160.0}, {"TT", 12.0, 120.0}, {"H0", 16.5, 87.0}, {"S", 22.5, 64.0},
+                {"0", 32.0, 45.0}, {"I", 45.0, 32.0}, {"II", 64.0, 22.5}, {"III", 89.0, 16.0}, {"V", 127.0, 11.0},
+                {"VII", 184.0, 8.0}, {"X", 260.0, 5.5},
+                {"Zm", 4.5, 220.0}, {"Nm", 6.5, 160.0}, {"TTm", 9.0, 120.0}, {"H0m", 12.0, 87.0}, {"0m", 22.5, 45.0},
+                {"IIm", 45.0, 22.5}, {"Xm", 184.0, 5.5},
+                {"Ne", 4.5, 160.0}, {"H0e", 9.0, 87.0}, {"0e", 16.5, 45.0}, {"IIe", 32.0, 22.5}, {"Xe", 127.0, 5.5},
+                {"TTi", 4.5, 120.0}, {"H0i", 6.5, 87.0}, {"0i", 12.0, 45.0}, {"Xi", 89.0, 5.5},
+                {"H0p", 4.5, 87.0}, {"0p", 9.0, 45.0}, {"IIp", 16.5, 22.5}, {"Xp", 64.0, 5.5}};
+        for (Object[] k : known) {
+            NemGauge g = NemGauge.byName((String) k[0]).orElseThrow(() -> new AssertionError("fehlt: " + k[0]));
+            assertEquals(k[1], g.gaugeMm());
+            assertEquals(k[2], g.scale());
+            assertEquals(k[0], g.nemName());
+        }
+        // vollständige Tabelle: 12 Normalspur, 12 m, 11 e, 10 i, 9 p, dazu CUSTOM; Bezeichnungen eindeutig
+        assertEquals(12 + 12 + 11 + 10 + 9 + 1, NemGauge.values().length);
+        assertEquals((long) NemGauge.values().length,
+                java.util.Arrays.stream(NemGauge.values()).map(NemGauge::nemName).distinct().count());
+        // je Gruppe gilt: eine Stufe schmaler = Spurweite der nächstkleineren Nenngröße (Diagonale der Tabelle)
+        assertEquals(NemGauge.TT.gaugeMm(), NemGauge.H0m.gaugeMm());
+        assertEquals(NemGauge.N.gaugeMm(), NemGauge.H0e.gaugeMm());
+        assertEquals(NemGauge.TTe.gaugeMm(), NemGauge.H0i.gaugeMm());
+        // H0 und 0e: gleiche Spurweite, verschiedene Spur
+        assertEquals(Gauge.of(NemGauge.H0).mm(), Gauge.of(NemGauge.ZERO_E).mm());
+        assertTrue(!Gauge.of(NemGauge.H0).equals(Gauge.of(NemGauge.ZERO_E)), "verschiedene Spur");
+        assertTrue(Double.isNaN(NemGauge.CUSTOM.gaugeMm()), "CUSTOM ohne eigenen Wert");
+        assertEquals(10.5, Gauge.custom(10.5).mm());
+        assertTrue(NemGauge.byName("CUSTOM").isPresent() && NemGauge.byName("h0").isEmpty(), "Lookup");
+        // Reihenfolge in der Datei: nach Spurweite
+        assertEquals(List.of(Gauge.of(NemGauge.H0e), Gauge.custom(10.5), Gauge.of(NemGauge.H0m), Gauge.of(NemGauge.H0)),
+                new TrackPlan.PieceProperties(Set.of(Gauge.of(NemGauge.H0), Gauge.custom(10.5), Gauge.of(NemGauge.H0e),
+                        Gauge.of(NemGauge.H0m)), null).sortedGauges());
     }
 
     public void testOptionalFieldsModel() {
@@ -539,8 +613,12 @@ public class TrackPlanTest {
         assertEquals(PlatformSide.LEFT, PlatformSide.RIGHT.mirrored());
         for (PlatformSide s : List.of(PlatformSide.UNSPECIFIED, PlatformSide.NONE, PlatformSide.BOTH))
             assertEquals(s, s.mirrored());
-        assertThrows(IllegalArgumentException.class, () -> new TrackPlan.PieceProperties(Set.of(Double.NaN), null));
-        assertThrows(IllegalArgumentException.class, () -> new TrackPlan.PieceProperties(Set.of(Double.POSITIVE_INFINITY), null));
+        assertThrows(IllegalArgumentException.class, () -> Gauge.custom(Double.NaN));
+        assertThrows(IllegalArgumentException.class, () -> Gauge.custom(Double.POSITIVE_INFINITY));
+        assertThrows(IllegalArgumentException.class, () -> Gauge.custom(-1));
+        assertThrows(IllegalArgumentException.class, () -> Gauge.of(NemGauge.CUSTOM));
+        assertThrows(IllegalArgumentException.class, () -> new Gauge(NemGauge.H0, OptionalDouble.of(16.5)));
+        assertThrows(IllegalArgumentException.class, () -> new Gauge(null, null));
         assertEquals(TrackPlan.PieceProperties.NONE, new TrackPlan.PieceProperties(null, null));
         DirectedLocation at = DirectedLocation.of("p", 0, true);
         Block b = new Block("b", List.of(), at, Set.of(Block.Direction.A_TO_B), null, 0, 1, null, null, null);
